@@ -1,0 +1,17 @@
+{$SITE_ADDRESS::80} {
+  encode zstd gzip
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+    Content-Security-Policy "default-src 'self'; script-src 'self' https://st.max.ru; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'"
+  }
+  @backend path /api/* /health/* /integrations/* /media/*
+  handle @backend {
+    reverse_proxy api:3000
+  }
+  handle {
+    root * /srv
+    try_files {path} /index.html
+    file_server
+  }
+}
