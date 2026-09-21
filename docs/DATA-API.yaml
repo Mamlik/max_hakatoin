@@ -1,0 +1,1013 @@
+{
+  "format": "project-api-inventory-v1",
+  "note": "Собственный формат проекта, не официальная схема организаторов.",
+  "basePath": "/api/v1",
+  "auth": "Bearer sessionToken после POST /auth/max",
+  "commands": "Idempotency-Key: UUID v4; expectedVersion для изменения существующих объектов",
+  "response": {
+    "success": "data + meta",
+    "failure": "error {code,message,details} + meta"
+  },
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/max",
+      "role": "public",
+      "description": "Проверка подписи MAX и создание часовой сессии",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/demo/identity",
+      "role": "public",
+      "description": "Локальный mock issuer (отсутствует в production)",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/config",
+      "role": "public",
+      "description": "Публичная конфигурация приложения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "role": "user",
+      "description": "Профиль, актуальные роли и состояние бота",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "role": "user",
+      "description": "Завершение сессии",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me/profile",
+      "role": "user",
+      "description": "Изменение имени",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me/preferences",
+      "role": "user",
+      "description": "Общее согласие на партнёрские предложения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/salons",
+      "role": "user",
+      "description": "Салоны с записями и избранные",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/me/favorites/:t",
+      "role": "user",
+      "description": "Добавить в избранное",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/me/favorites/:t",
+      "role": "user",
+      "description": "Удалить из избранного",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/salons/:t/preferences",
+      "role": "user",
+      "description": "Настройки сообщений и согласия выбранного салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me/salons/:t/preferences",
+      "role": "user",
+      "description": "Сохранение отдельных согласий без автоматической подписки",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/notifications",
+      "role": "user",
+      "description": "Центр событий с фильтром салона, типа и прочтения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/me/notifications/:id/read",
+      "role": "user",
+      "description": "Отметить собственное событие прочитанным",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/operations/:id",
+      "role": "user",
+      "description": "Получить результат своей операции",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/launch/resolve",
+      "role": "user",
+      "description": "Безопасное разрешение стартового контекста",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/public/salons",
+      "role": "public",
+      "description": "Поиск опубликованных салонов по названию или коду",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/public/salons/:code",
+      "role": "public",
+      "description": "Опубликованная витрина",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/public/salons/:code/catalog",
+      "role": "public",
+      "description": "Активные услуги и мастера",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/public/salons/:code/slots",
+      "role": "public",
+      "description": "Свободные интервалы без удержания",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tenants",
+      "role": "user",
+      "description": "Создание нового салона и назначение владельца",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/profile",
+      "role": "owner",
+      "description": "Черновой профиль салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/onboarding",
+      "role": "owner",
+      "description": "Чек-лист публикации",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/profile",
+      "role": "owner",
+      "description": "Сохранение профиля",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/storefront/draft",
+      "role": "owner",
+      "description": "Черновик и предпросмотр оформления",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/storefront/preview",
+      "role": "owner",
+      "description": "Черновик и предпросмотр оформления",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/work/:t/storefront/draft",
+      "role": "owner",
+      "description": "Сохранение черновика оформления",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/storefront/publish",
+      "role": "owner",
+      "description": "Публикация сохранённого оформления",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/publish",
+      "role": "owner",
+      "description": "Изменение статуса салона: publish",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/pause",
+      "role": "owner",
+      "description": "Изменение статуса салона: pause",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/archive",
+      "role": "owner",
+      "description": "Изменение статуса салона: archive",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/restore",
+      "role": "owner",
+      "description": "Изменение статуса салона: restore",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/entry-link",
+      "role": "owner",
+      "description": "Ссылка салона и QR PNG",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/media",
+      "role": "owner,admin",
+      "description": "Загрузка и безопасное перекодирование изображения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/media/:id",
+      "role": "owner,admin",
+      "description": "Защищённый просмотр чернового изображения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/media/:key",
+      "role": "public",
+      "description": "Только опубликованные изображения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/categories",
+      "role": "owner,admin",
+      "description": "Категории услуг",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/categories",
+      "role": "owner,admin",
+      "description": "Создать категорию",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/categories/:id",
+      "role": "owner,admin",
+      "description": "Изменить категорию",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/services",
+      "role": "owner,admin",
+      "description": "Рабочий каталог services",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/services",
+      "role": "owner,admin",
+      "description": "Создание услуги",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/services/:id",
+      "role": "owner,admin",
+      "description": "Изменение услуги для будущих записей",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/services/:id/archive",
+      "role": "owner,admin",
+      "description": "Архивирование с сохранением истории",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/staff",
+      "role": "owner,admin",
+      "description": "Рабочий каталог staff",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/staff",
+      "role": "owner,admin",
+      "description": "Создание мастера",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/staff/:id",
+      "role": "owner,admin",
+      "description": "Изменение мастера",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/staff/:id/archive",
+      "role": "owner,admin",
+      "description": "Архивирование с сохранением истории",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/work/:t/staff/:id/services",
+      "role": "owner,admin",
+      "description": "Назначить услуги мастеру",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/staff/:id/schedule",
+      "role": "owner,admin,master",
+      "description": "Недельные правила и исключения мастера",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/work/:t/staff/:id/schedule",
+      "role": "owner,admin",
+      "description": "Версионный недельный график с подтверждением конфликтов",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/work/:t/staff/:id/exceptions/:date",
+      "role": "owner,admin",
+      "description": "Закрыть день или заменить интервалы",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/work/:t/staff/:id/exceptions/:date",
+      "role": "owner,admin",
+      "description": "Удаление исключения и возврат недельного графика",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/booking-options",
+      "role": "owner,admin",
+      "description": "Каталог для ручной записи",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/slots",
+      "role": "owner,admin",
+      "description": "Свободные интервалы для ручной записи",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/bookings",
+      "role": "user",
+      "description": "Единый личный календарь и история",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/calendar",
+      "role": "owner,admin,master",
+      "description": "Календарь салона с ограничением назначений мастера",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/bookings/:b",
+      "role": "user",
+      "description": "Карточка визита с полями доступными роли",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/salons/:t/booking-quotes",
+      "role": "user",
+      "description": "Серверный расчёт цены и условий новой записи",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/salons/:t/bookings",
+      "role": "user",
+      "description": "Атомарное подтверждение записи и резерв купона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/bookings/:b/reschedule-quotes",
+      "role": "user",
+      "description": "Расчёт переноса с сохранением снимка той же услуги",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/bookings/:b/reschedule-options",
+      "role": "user",
+      "description": "Актуальный каталог для сопровождения существующей записи",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/bookings/:b/reschedule-slots",
+      "role": "user",
+      "description": "Доступные слоты для переноса, включая салон на паузе",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/bookings/:b/reschedule",
+      "role": "user",
+      "description": "Атомарный перенос; при конфликте исходный визит сохранён",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/bookings/:b/cancel",
+      "role": "user",
+      "description": "Отмена записи и освобождение купона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/bookings/:b",
+      "role": "owner,admin,master",
+      "description": "Карточка визита с полями доступными роли",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/booking-quotes",
+      "role": "owner,admin",
+      "description": "Серверный расчёт цены и условий новой записи",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/bookings",
+      "role": "owner,admin",
+      "description": "Атомарное подтверждение записи и резерв купона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/bookings/:b/reschedule-quotes",
+      "role": "owner,admin",
+      "description": "Расчёт переноса с сохранением снимка той же услуги",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/bookings/:b/reschedule-options",
+      "role": "owner,admin",
+      "description": "Актуальный каталог для сопровождения существующей записи",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/bookings/:b/reschedule-slots",
+      "role": "owner,admin",
+      "description": "Доступные слоты для переноса, включая салон на паузе",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/bookings/:b/reschedule",
+      "role": "owner,admin",
+      "description": "Атомарный перенос; при конфликте исходный визит сохранён",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/bookings/:b/cancel",
+      "role": "owner,admin",
+      "description": "Отмена записи и освобождение купона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/bookings/:b/complete",
+      "role": "owner,admin,master",
+      "description": "Отметить исход назначенного визита после его начала",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/bookings/:b/no-show",
+      "role": "owner,admin,master",
+      "description": "Отметить исход назначенного визита после его начала",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/bookings/:b/correct-outcome",
+      "role": "owner",
+      "description": "Исправление исхода владельцем без повторной выдачи купонов",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/customers",
+      "role": "owner,admin",
+      "description": "Поиск CRM своего салона по имени, контакту и тегу",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/customers",
+      "role": "owner,admin",
+      "description": "Создание ручной карточки без угадывания аккаунта",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/customers/:c",
+      "role": "owner,admin",
+      "description": "Карточка, заметки и локальная история клиента",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/customers/:c",
+      "role": "owner,admin",
+      "description": "Изменение локального имени, контакта и тегов",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/customers/:c/notes",
+      "role": "owner,admin",
+      "description": "Внутренняя заметка без отправки клиенту",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/customers/:c/notes/:id",
+      "role": "owner,admin",
+      "description": "Редактирование заметки с аудитом",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/customers/:c/eligible-vouchers",
+      "role": "owner,admin",
+      "description": "Только купоны клиента для принимающего салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/customers/:c/link-invites",
+      "role": "owner,admin",
+      "description": "Одноразовая ссылка двухсторонней привязки ручной карточки",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/customer-link-invites/:id/confirm",
+      "role": "owner,admin",
+      "description": "Второе подтверждение привязки сотрудником",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/memberships",
+      "role": "owner",
+      "description": "Рабочие роли и приглашения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/staff-invites",
+      "role": "owner",
+      "description": "Приглашение сотрудника на 24 часа",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/staff-invites/:id/revoke",
+      "role": "owner",
+      "description": "Отозвать неиспользованное приглашение",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/customer-link-invites/:id/revoke",
+      "role": "owner,admin",
+      "description": "Отозвать неиспользованное приглашение",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/invites/inspect",
+      "role": "user",
+      "description": "Минимальные сведения о приглашении без раскрытия истории",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/invites/accept",
+      "role": "user",
+      "description": "Явное принятие приглашения сотрудником или клиентом",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/memberships/:id/revoke",
+      "role": "owner",
+      "description": "Немедленный отзыв рабочего доступа",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/work/:t/operational-recipient",
+      "role": "owner",
+      "description": "Назначить единственного операционного получателя",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/my-notification-preferences",
+      "role": "owner,admin,master",
+      "description": "Согласие на рабочие сообщения бота",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/partner-settings",
+      "role": "owner",
+      "description": "Добровольное участие бизнеса в партнёрстве",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/campaigns",
+      "role": "owner",
+      "description": "Партнёрские кампании своей стороны",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns",
+      "role": "owner",
+      "description": "Создание черновика односторонней кампании",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/campaigns/:id",
+      "role": "owner",
+      "description": "Конкретные версии и согласования",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns/:id/versions",
+      "role": "owner",
+      "description": "Новая версия с сохранением действующих условий",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/campaigns/:id/versions/:v",
+      "role": "owner",
+      "description": "Редактирование только несогласованного черновика",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/work/:t/campaigns/:id/versions/:v",
+      "role": "owner",
+      "description": "Удаление несогласованного черновика",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns/:id/versions/:v/propose",
+      "role": "owner",
+      "description": "Согласование версии: propose",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns/:id/versions/:v/accept",
+      "role": "owner",
+      "description": "Согласование версии: accept",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns/:id/versions/:v/reject",
+      "role": "owner",
+      "description": "Согласование версии: reject",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns/:id/versions/:v/withdraw",
+      "role": "owner",
+      "description": "Согласование версии: withdraw",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns/:id/pause",
+      "role": "owner",
+      "description": "Управление выдачей: pause",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns/:id/resume",
+      "role": "owner",
+      "description": "Управление выдачей: resume",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/campaigns/:id/end",
+      "role": "owner",
+      "description": "Управление выдачей: end",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/campaigns/:id/history",
+      "role": "owner",
+      "description": "История согласований обеих сторон без CRM",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/vouchers",
+      "role": "user",
+      "description": "Личные купоны всех статусов",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/vouchers/:id",
+      "role": "user",
+      "description": "Собственный купон без внутренних данных другого салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/vouchers",
+      "role": "owner",
+      "description": "Безопасная проекция купонов программы",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/vouchers/:id/revoke",
+      "role": "owner",
+      "description": "Отзыв свободного купона с причиной",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/vouchers/:id/revocation-requests",
+      "role": "owner",
+      "description": "Запрос клиенту на снятие зарезервированной скидки",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/voucher-revocation-requests/:id/respond",
+      "role": "user",
+      "description": "Явное согласие или отказ клиента от изменения цены",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/partner-exceptions",
+      "role": "owner",
+      "description": "Исключения своих партнёрских обязательств",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/partner-exceptions/:id/resolve",
+      "role": "owner",
+      "description": "Зафиксировать результат разбора без скрытого изменения денег",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/analytics",
+      "role": "owner,admin",
+      "description": "Периодные метрики, стоимость услуг и загрузка по сохранённым графикам",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/campaigns/:id/analytics",
+      "role": "owner",
+      "description": "Конверсия когорты выданных купонов без клиентов другого салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/audit",
+      "role": "owner,admin",
+      "description": "Журнал действий разрешённых областей",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/delivery-failures",
+      "role": "owner,admin",
+      "description": "Состояние доставки сообщений своего салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/loyalty",
+      "role": "user",
+      "description": "Прогресс по услугам: N платных посещений и одно бесплатное",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/loyalty-rewards",
+      "role": "user",
+      "description": "Личные бесплатные посещения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/customers/:c/loyalty",
+      "role": "owner,admin",
+      "description": "Прогресс и бесплатные визиты клиента салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/loyalty-programs",
+      "role": "owner,admin",
+      "description": "Программы лояльности салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/work/:t/loyalty-programs",
+      "role": "owner",
+      "description": "Настроить количество платных посещений для бесплатного визита той же услуги",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    }
+  ]
+}

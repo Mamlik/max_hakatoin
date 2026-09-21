@@ -1,0 +1,66 @@
+{
+  "name": "max-salon-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "overrides": {
+    "fastify": "$fastify"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker\"",
+    "dev:api": "tsx watch apps/api/main.ts",
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "dev:worker": "tsx watch apps/worker/main.ts",
+    "start:api": "tsx apps/api/main.ts",
+    "start:worker": "tsx apps/worker/main.ts",
+    "db:migrate": "tsx packages/db/migrate.ts",
+    "db:seed": "tsx packages/db/seed.ts",
+    "max:check": "tsx ops/scripts/max-check.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build --config apps/web/vite.config.ts",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "api:docs": "tsx ops/scripts/api-docs.ts",
+    "test:prepare": "tsx ops/scripts/test-db.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.6",
+    "@nestjs/core": "11.1.6",
+    "@nestjs/platform-fastify": "11.1.6",
+    "@fastify/multipart": "9.2.1",
+    "@fastify/rate-limit": "10.3.0",
+    "bullmq": "5.58.5",
+    "dotenv": "16.6.1",
+    "fastify": "5.6.1",
+    "ioredis": "5.7.0",
+    "lossless-json": "4.2.0",
+    "luxon": "3.7.2",
+    "pg": "8.16.3",
+    "qrcode": "1.5.4",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "react-router-dom": "7.8.2",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "sharp": "0.34.3",
+    "zod": "4.1.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0",
+    "@types/luxon": "3.7.1",
+    "@types/node": "22.18.0",
+    "@types/pg": "8.15.5",
+    "@types/qrcode": "1.5.5",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "@vitejs/plugin-react": "4.7.0",
+    "concurrently": "9.2.1",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "vite": "6.3.6",
+    "vitest": "3.2.4"
+  }
+}

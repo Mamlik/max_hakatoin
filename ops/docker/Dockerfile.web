@@ -1,0 +1,11 @@
+FROM node:24.14.0-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY tsconfig.json ./
+COPY apps/web ./apps/web
+RUN npx vite build --config apps/web/vite.config.ts
+FROM caddy:2.10.2-alpine
+COPY --from=build /app/dist/web /srv
+COPY ops/docker/Caddyfile /etc/caddy/Caddyfile
+EXPOSE 80 443
