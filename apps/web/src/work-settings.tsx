@@ -11,6 +11,7 @@ import {
   SimpleForm,
   CommandButton,
   Modal,
+  FilePick,
 } from "./ui";
 import { StorefrontView } from "./personal";
 import { LinkBox } from "./work";
@@ -320,13 +321,11 @@ export function SettingsPage() {
                             label="Логотип"
                             hint="JPEG, PNG или WebP до 5 МБ. Сервер удалит метаданные и сохранит WebP."
                           >
-                            <input
-                              type="file"
+                            <FilePick
                               accept="image/jpeg,image/png,image/webp"
                               disabled={a.busy}
-                              onChange={(e) =>
-                                void upload("logo", e.target.files?.[0])
-                              }
+                              onPick={(f) => void upload("logo", f)}
+                              label="Выбрать логотип"
                             />
                           </Field>
                           {style.logoMediaId && (
@@ -336,13 +335,11 @@ export function SettingsPage() {
                             label="Обложка"
                             hint="Рекомендуемое соотношение 16:9; обрезка по центру."
                           >
-                            <input
-                              type="file"
+                            <FilePick
                               accept="image/jpeg,image/png,image/webp"
                               disabled={a.busy}
-                              onChange={(e) =>
-                                void upload("cover", e.target.files?.[0])
-                              }
+                              onPick={(f) => void upload("cover", f)}
+                              label="Выбрать обложку"
                             />
                           </Field>
                           {style.coverMediaId && (

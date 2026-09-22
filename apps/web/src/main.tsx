@@ -244,9 +244,13 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <Link className="add-salon" to="/create-salon">
+          <Link
+            className="add-salon"
+            to="/create-salon"
+            aria-label="Создать салон"
+          >
             <Icon name="plus" />
-            Создать салон
+            <span>Создать салон</span>
           </Link>
           <div className="account">
             <span className="avatar">{auth.me.user.displayName.charAt(0)}</span>

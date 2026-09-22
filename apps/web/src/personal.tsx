@@ -259,6 +259,11 @@ export function DiscoverPage() {
     `/public/salons?query=${encodeURIComponent(query)}`,
   );
   const mine = useApi<Items<Salon>>("/me/salons");
+  // Salons already listed under «Вы уже знакомы» must not appear again in the discovery row.
+  const known = new Set(mine.data?.items.map((s) => s.id) ?? []);
+  const discover = (publicData.data?.items ?? []).filter(
+    (s) => !!query || !known.has(s.id),
+  );
   return (
     <>
       <PageTitle
@@ -292,21 +297,25 @@ export function DiscoverPage() {
         <h2>{query ? "Результаты поиска" : "Открывайте новое"}</h2>
         <span className="muted">
           {publicData.data
-            ? plural(publicData.data.items.length, "салон", "салона", "салонов")
+            ? plural(discover.length, "салон", "салона", "салонов")
             : "…"}
         </span>
       </div>
       <Load {...publicData}>
-        {publicData.data?.items.length ? (
+        {discover.length ? (
           <div className="salon-grid">
-            {publicData.data.items.map((s) => (
+            {discover.map((s) => (
               <SalonCard key={s.id} salon={s} />
             ))}
           </div>
         ) : (
           <Empty
-            title="Салон не найден"
-            text="Проверьте название или используйте персональную ссылку салона."
+            title={query ? "Салон не найден" : "Новых салонов пока нет"}
+            text={
+              query
+                ? "Проверьте название или используйте персональную ссылку салона."
+                : "Вы уже знакомы со всеми салонами, которые сейчас открыты."
+            }
           />
         )}
       </Load>
