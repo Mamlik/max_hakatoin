@@ -1,0 +1,31 @@
+services:
+  api:
+    environment: &real_max_environment
+      APP_ENV: production
+      MAX_MODE: real
+      MAX_BOT_TOKEN: ''
+      MAX_WEBHOOK_SECRET: ''
+      MAX_BOT_TOKEN_FILE: /run/secrets/max_bot_token
+      MAX_WEBHOOK_SECRET_FILE: /run/secrets/max_webhook_secret
+      NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
+    secrets: &real_max_secrets
+      - max_bot_token
+      - max_webhook_secret
+
+  worker:
+    environment: *real_max_environment
+    secrets: *real_max_secrets
+
+  migrate:
+    environment: *real_max_environment
+    secrets: *real_max_secrets
+
+  edge:
+    ports: !override
+      - '127.0.0.1:8080:80'
+
+secrets:
+  max_bot_token:
+    file: ./secrets/max_bot_token.txt
+  max_webhook_secret:
+    file: ./secrets/max_webhook_secret.txt
