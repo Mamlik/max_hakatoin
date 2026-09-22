@@ -1,51 +1,149 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { parse as parseLossless, isLosslessNumber } from 'lossless-json';
-import { config } from './config.js';
-import { fail, required } from './errors.js';
-import { one, type DB } from '../db/db.js';
-import type { Actor, Membership, Role } from './types.js';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
+import { parse as parseLossless, isLosslessNumber } from "lossless-json";
+import { config } from "./config.js";
+import { fail, required } from "./errors.js";
+import { one, type DB } from "../db/db.js";
+import type { Actor, Membership, Role } from "./types.js";
 
-export const hash = (s: string) => createHash('sha256').update(s).digest('hex');
-export const randomToken = () => randomBytes(32).toString('base64url');
+export const hash = (s: string) => createHash("sha256").update(s).digest("hex");
+export const randomToken = () => randomBytes(32).toString("base64url");
+
 export function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a],[b]) => a.localeCompare(b)).map(([k,v])=>`${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
-  return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`);
+
+    return `{${entries.join(",")}}`;
+  }
+
+  return JSON.stringify(value) ?? "null";
 }
-export function equalSecret(a: string, b: string) { return timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest()); }
-export function signInitData(values: Record<string, string>, token = config.MAX_BOT_TOKEN) {
+
+export function equalSecret(left: string, right: string): boolean {
+  const leftDigest = createHash("sha256").update(left).digest();
+  const rightDigest = createHash("sha256").update(right).digest();
+  return timingSafeEqual(leftDigest, rightDigest);
+}
+
+export function signInitData(
+  values: Record<string, string>,
+  token = config.MAX_BOT_TOKEN,
+) {
   const params = new URLSearchParams(values);
-  const text = [...params.entries()].sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([k,v]) => `${k}=${v}`).join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(token).digest();
-  params.set('hash', createHmac('sha256', secret).update(text).digest('hex'));
+  const text = [...params.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const secret = createHmac("sha256", "WebAppData").update(token).digest();
+  params.set("hash", createHmac("sha256", secret).update(text).digest("hex"));
   return params.toString();
 }
-export function validateInitData(raw: string, token = config.MAX_BOT_TOKEN, now = Date.now()) {
-  if (Buffer.byteLength(raw) > 16384) fail(401, 'AUTH_REQUIRED', 'Недопустимые данные MAX');
+export function validateInitData(
+  raw: string,
+  token = config.MAX_BOT_TOKEN,
+  now = Date.now(),
+) {
+  if (Buffer.byteLength(raw) > 16384)
+    fail(401, "AUTH_REQUIRED", "Недопустимые данные MAX");
   const p = new URLSearchParams(raw);
-  if (new Set([...p.keys()]).size !== [...p.keys()].length) fail(401,'AUTH_REQUIRED','Повторяющиеся параметры MAX');
-  const signature = p.get('hash') ?? ''; const date = p.get('auth_date') ?? '';
-  if (!/^[0-9a-fA-F]{64}$/.test(signature) || !/^\d{10}$/.test(date) || !p.get('user')) fail(401,'AUTH_REQUIRED','Некорректные данные MAX');
-  p.delete('hash');
-  const text = [...p.entries()].sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([k,v])=>`${k}=${v}`).join('\n');
-  const secret = createHmac('sha256','WebAppData').update(token).digest();
-  if (!timingSafeEqual(Buffer.from(signature,'hex'),createHmac('sha256',secret).update(text).digest())) fail(401,'AUTH_REQUIRED','Подпись MAX не подтверждена');
-  const authDate = Number(date)*1000;
-  if (now-authDate >= config.AUTH_MAX_AGE_SECONDS*1000 || authDate-now > config.AUTH_FUTURE_SKEW_SECONDS*1000) fail(401,'AUTH_REQUIRED','Откройте приложение заново в MAX');
+  if (new Set([...p.keys()]).size !== [...p.keys()].length)
+    fail(401, "AUTH_REQUIRED", "Повторяющиеся параметры MAX");
+  const signature = p.get("hash") ?? "";
+  const date = p.get("auth_date") ?? "";
+  if (
+    !/^[0-9a-fA-F]{64}$/.test(signature) ||
+    !/^\d{10}$/.test(date) ||
+    !p.get("user")
+  )
+    fail(401, "AUTH_REQUIRED", "Некорректные данные MAX");
+  p.delete("hash");
+  const text = [...p.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const secret = createHmac("sha256", "WebAppData").update(token).digest();
+  if (
+    !timingSafeEqual(
+      Buffer.from(signature, "hex"),
+      createHmac("sha256", secret).update(text).digest(),
+    )
+  )
+    fail(401, "AUTH_REQUIRED", "Подпись MAX не подтверждена");
+  const authDate = Number(date) * 1000;
+  if (
+    now - authDate >= config.AUTH_MAX_AGE_SECONDS * 1000 ||
+    authDate - now > config.AUTH_FUTURE_SKEW_SECONDS * 1000
+  )
+    fail(401, "AUTH_REQUIRED", "Откройте приложение заново в MAX");
   let user: Record<string, unknown>;
-  try { user = parseLossless(p.get('user')!) as Record<string, unknown>; } catch { return fail(401,'AUTH_REQUIRED','Некорректный профиль MAX'); }
-  if (!user || typeof user !== 'object') fail(401,'AUTH_REQUIRED','Некорректный профиль MAX');
+  try {
+    user = parseLossless(p.get("user")!) as Record<string, unknown>;
+  } catch {
+    return fail(401, "AUTH_REQUIRED", "Некорректный профиль MAX");
+  }
+  if (!user || typeof user !== "object")
+    fail(401, "AUTH_REQUIRED", "Некорректный профиль MAX");
   const id = isLosslessNumber(user.id) ? user.id.toString() : String(user.id);
-  if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id)>9223372036854775807n) fail(401,'AUTH_REQUIRED','Некорректный идентификатор MAX');
-  const name = [user.first_name, user.last_name].filter(v=>typeof v === 'string').join(' ').trim().slice(0,120) || 'Пользователь MAX';
-  return { id, name, expiresAt: new Date(authDate+config.AUTH_MAX_AGE_SECONDS*1000), startParam: p.get('start_param') ?? null };
+  if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > 9223372036854775807n)
+    fail(401, "AUTH_REQUIRED", "Некорректный идентификатор MAX");
+  const name =
+    [user.first_name, user.last_name]
+      .filter((v) => typeof v === "string")
+      .join(" ")
+      .trim()
+      .slice(0, 120) || "Пользователь MAX";
+  return {
+    id,
+    name,
+    expiresAt: new Date(authDate + config.AUTH_MAX_AGE_SECONDS * 1000),
+    startParam: p.get("start_param") ?? null,
+  };
 }
-export async function authenticate(db: DB, authorization?: string): Promise<Actor> {
-  if (!authorization?.startsWith('Bearer ')) fail(401,'AUTH_REQUIRED','Войдите через MAX');
-  const actor = await one<Actor>(db, 'SELECT u.*, s.id session_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()', [hash(authorization.slice(7))]);
-  if (!actor) fail(401,'AUTH_REQUIRED','Сессия истекла. Откройте приложение заново в MAX'); return actor;
+export async function authenticate(
+  db: DB,
+  authorization?: string,
+): Promise<Actor> {
+  if (!authorization?.startsWith("Bearer "))
+    fail(401, "AUTH_REQUIRED", "Войдите через MAX");
+  const actor = await one<Actor>(
+    db,
+    "SELECT u.*, s.id session_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()",
+    [hash(authorization.slice(7))],
+  );
+  if (!actor) {
+    fail(
+      401,
+      "AUTH_REQUIRED",
+      "Сессия истекла. Откройте приложение заново в MAX",
+    );
+  }
+
+  return actor;
 }
-export async function access(db: DB, actor: Actor, tenant: string, roles: Role[] = ['owner','admin','master']): Promise<Membership> {
-  const member = required(await one<Membership>(db,"SELECT * FROM memberships WHERE tenant_id=$1 AND user_id=$2 AND status='active'",[tenant,actor.id]));
-  if (!roles.includes(member.role)) fail(403,'FORBIDDEN','Для этого действия недостаточно прав'); return member;
+export async function access(
+  db: DB,
+  actor: Actor,
+  tenant: string,
+  roles: Role[] = ["owner", "admin", "master"],
+): Promise<Membership> {
+  const member = required(
+    await one<Membership>(
+      db,
+      "SELECT * FROM memberships WHERE tenant_id=$1 AND user_id=$2 AND status='active'",
+      [tenant, actor.id],
+    ),
+  );
+
+  if (!roles.includes(member.role)) {
+    fail(403, "FORBIDDEN", "Для этого действия недостаточно прав");
+  }
+
+  return member;
 }
