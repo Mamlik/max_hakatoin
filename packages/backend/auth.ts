@@ -112,9 +112,11 @@ export async function authenticate(
 ): Promise<Actor> {
   if (!authorization?.startsWith("Bearer "))
     fail(401, "AUTH_REQUIRED", "Войдите через MAX");
-  const actor = await one<Actor>(
+  const actor = await one<
+    Actor & { session_expires_at: Date; session_created_at: Date }
+  >(
     db,
-    "SELECT u.*, s.id session_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()",
+    "SELECT u.*, s.id session_id, s.expires_at session_expires_at, s.created_at session_created_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()",
     [hash(authorization.slice(7))],
   );
   if (!actor) {
@@ -124,6 +126,23 @@ export async function authenticate(
       "Сессия истекла. Откройте приложение заново в MAX",
     );
   }
+  // Sliding window: staff working a shift are not logged out mid-task. The write happens
+  // at most once per half window, and never extends past created_at + SESSION_ABSOLUTE_SECONDS.
+  const absoluteEnd =
+    actor.session_created_at.getTime() + config.SESSION_ABSOLUTE_SECONDS * 1000;
+  if (
+    actor.session_expires_at.getTime() < absoluteEnd &&
+    actor.session_expires_at.getTime() - Date.now() <
+      config.SESSION_IDLE_SECONDS * 500
+  )
+    await db.query(
+      "UPDATE sessions SET expires_at=LEAST(now()+make_interval(secs=>$2::int), created_at+make_interval(secs=>$3::int)) WHERE id=$1",
+      [
+        actor.session_id,
+        config.SESSION_IDLE_SECONDS,
+        config.SESSION_ABSOLUTE_SECONDS,
+      ],
+    );
 
   return actor;
 }

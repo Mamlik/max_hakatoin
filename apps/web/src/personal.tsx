@@ -21,6 +21,7 @@ import {
   useAction,
   BackLink,
   CommandButton,
+  plural,
 } from "./ui";
 import type {
   Booking,
@@ -290,7 +291,9 @@ export function DiscoverPage() {
       <div className="section-head">
         <h2>{query ? "Результаты поиска" : "Открывайте новое"}</h2>
         <span className="muted">
-          {publicData.data?.items.length ?? "…"} салона
+          {publicData.data
+            ? plural(publicData.data.items.length, "салон", "салона", "салонов")
+            : "…"}
         </span>
       </div>
       <Load {...publicData}>

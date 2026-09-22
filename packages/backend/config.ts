@@ -39,6 +39,20 @@ const env = z
       .min(0)
       .max(60)
       .default(60),
+    // AUTH_MAX_AGE_SECONDS caps how stale MAX initData may be. Session life is separate:
+    // it slides while the person keeps working and stops at the absolute cap.
+    SESSION_IDLE_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(300)
+      .max(86400)
+      .default(3600),
+    SESSION_ABSOLUTE_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(3600)
+      .max(2592000)
+      .default(43200),
     MEDIA_ROOT: z.string().default("./media"),
     BOOKING_HORIZON_DAYS: z.coerce.number().int().min(1).max(30).default(30),
     SLOT_STEP_MINUTES: z.coerce.number().int().min(5).max(60).default(15),
@@ -60,6 +74,10 @@ if (["staging", "production"].includes(env.APP_ENV)) {
   if (env.MAX_API_BASE_URL !== "https://platform-api2.max.ru")
     throw new Error("MAX API host is not allowed");
 }
+if (env.SESSION_ABSOLUTE_SECONDS < env.SESSION_IDLE_SECONDS)
+  throw new Error(
+    "SESSION_ABSOLUTE_SECONDS must not be shorter than SESSION_IDLE_SECONDS",
+  );
 if (env.MAX_MODE === "real" && env.MAX_BOT_TOKEN.startsWith("demo"))
   throw new Error("Set MAX_BOT_TOKEN_FILE before enabling real MAX");
 export const config = env;

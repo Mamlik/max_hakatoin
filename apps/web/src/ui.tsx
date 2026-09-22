@@ -220,6 +220,14 @@ export function Field({
     </label>
   );
 }
+// Russian count agreement: 1 услуга / 2 услуги / 5 услуг.
+export function plural(n: number, one: string, few: string, many: string) {
+  const a = Math.abs(n) % 100;
+  const b = a % 10;
+  const form =
+    a >= 11 && a <= 14 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
+  return `${n} ${form}`;
+}
 export function Check({
   label,
   checked,
