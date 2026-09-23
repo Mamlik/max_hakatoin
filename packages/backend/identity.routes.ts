@@ -16,7 +16,7 @@ export function identityRoutes(app: FastifyInstance) {
     {
       public: true,
       schema: z.object({ initData: z.string().max(16384) }).strict(),
-      description: "Проверка подписи MAX и создание часовой сессии",
+      description: "Проверка подписи MAX и создание сессии со скользящим сроком",
     },
     async ({ db, b }) => {
       const max = validateInitData(b.initData);
@@ -26,13 +26,16 @@ export function identityRoutes(app: FastifyInstance) {
         [max.id, max.name],
       ))!;
       const token = randomToken();
+      const expiresAt = new Date(
+        Date.now() + config.SESSION_IDLE_SECONDS * 1000,
+      );
       await db.query(
         "INSERT INTO sessions(user_id,token_hash,expires_at) VALUES($1,$2,$3)",
-        [user.id, hash(token), max.expiresAt],
+        [user.id, hash(token), expiresAt],
       );
       return {
         sessionToken: token,
-        expiresAt: max.expiresAt,
+        expiresAt,
         user,
         launchContext: max.startParam,
       };

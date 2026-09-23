@@ -575,15 +575,7 @@ export function BookingPage({ work = false }: { work?: boolean }) {
                       <button
                         className="button primary"
                         disabled={action.busy}
-                        onClick={() =>
-                          void action.run(
-                            () =>
-                              api(`${path}/complete`, "POST", {
-                                expectedVersion: b.version,
-                              }),
-                            "Визит завершён",
-                          )
-                        }
+                        onClick={() => setModal("complete")}
                       >
                         Завершить визит
                       </button>
@@ -667,11 +659,40 @@ export function BookingPage({ work = false }: { work?: boolean }) {
                         ? "Отменить запись"
                         : modal === "no-show"
                           ? "Отметить неявку"
-                          : "Исправить исход"
+                          : modal === "complete"
+                            ? "Завершить визит"
+                            : "Исправить исход"
                     }
                     onClose={() => setModal("")}
                   >
-                    {modal === "no-show" ? (
+                    {modal === "complete" ? (
+                      <>
+                        <p>
+                          Визит будет отмечен как завершённый. Это начислит
+                          отметку лояльности и, если условия выполнены, выдаст
+                          награду или партнёрский купон.
+                        </p>
+                        <p className="small muted">
+                          Исправить исход позже не получится, если выданная
+                          награда уже зарезервирована или использована.
+                        </p>
+                        <button
+                          className="button primary"
+                          disabled={action.busy}
+                          onClick={() =>
+                            void action.run(async () => {
+                              await api(`${path}/complete`, "POST", {
+                                expectedVersion: b.version,
+                              });
+                              setModal("");
+                            }, "Визит завершён")
+                          }
+                        >
+                          Подтвердить завершение
+                        </button>
+                        {action.feedback}
+                      </>
+                    ) : modal === "no-show" ? (
                       <>
                         <p>
                           Визит будет отмечен как неявка. Зарезервированный

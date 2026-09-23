@@ -1,12 +1,13 @@
 import { beforeAll, beforeEach, afterAll, describe, it, expect } from "vitest";
 import { readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { DateTime } from "luxon";
 import { createApp } from "../apps/api/main.js";
 import { pool, one, rows, tx } from "../packages/db/db.js";
 import { seed, fixtureId as f } from "../packages/db/seed.js";
 import { signInitData } from "../packages/backend/auth.js";
+import { config } from "../packages/backend/config.js";
 import { processInbox } from "../apps/worker/main.js";
 import { redis } from "../packages/max-api/client.js";
 import type { Campaign as CampaignDB } from "../packages/backend/types.js";
@@ -1321,5 +1322,45 @@ describe("partnership agreement and vouchers", () => {
       { expectedVersion: 1 },
     );
     expect(await rows(pool, "SELECT id FROM vouchers")).toHaveLength(0);
+  });
+});
+
+describe("session lifetime", () => {
+  const sessionRow = (token: string) =>
+    one<{ expires_at: Date; created_at: Date }>(
+      pool,
+      "SELECT expires_at,created_at FROM sessions WHERE token_hash=$1",
+      [createHash("sha256").update(token).digest("hex")],
+    );
+  it("slides forward while the person keeps working", async () => {
+    const token = await login("owner-a");
+    await pool.query("UPDATE sessions SET expires_at=now()+interval '60 seconds'");
+    expect((await req("GET", "/api/v1/me", token)).status).toBe(200);
+    const after = (await sessionRow(token))!;
+    // renewed to roughly the full idle window instead of dying mid-shift
+    expect(after.expires_at.getTime() - Date.now()).toBeGreaterThan(
+      config.SESSION_IDLE_SECONDS * 900,
+    );
+  });
+  it("never slides past the absolute cap and leaves fresh sessions untouched", async () => {
+    const token = await login("owner-a");
+    const fresh = (await sessionRow(token))!.expires_at.getTime();
+    expect((await req("GET", "/api/v1/me", token)).status).toBe(200);
+    expect((await sessionRow(token))!.expires_at.getTime()).toBe(fresh);
+    // half an hour of absolute budget left: renewal stops there, not at a full idle window
+    await pool.query(
+      `UPDATE sessions SET created_at=now()-make_interval(secs=>${config.SESSION_ABSOLUTE_SECONDS - 1800}), expires_at=now()+interval '60 seconds'`,
+    );
+    expect((await req("GET", "/api/v1/me", token)).status).toBe(200);
+    const capped = (await sessionRow(token))!.expires_at.getTime() - Date.now();
+    expect(capped).toBeGreaterThan(1500 * 1000);
+    expect(capped).toBeLessThan(1900 * 1000);
+  });
+  it("rejects a session that reached the absolute cap", async () => {
+    const token = await login("owner-a");
+    await pool.query(
+      `UPDATE sessions SET created_at=now()-make_interval(secs=>${config.SESSION_ABSOLUTE_SECONDS + 3600}), expires_at=now()-interval '1 second'`,
+    );
+    expect((await req("GET", "/api/v1/me", token)).status).toBe(401);
   });
 });

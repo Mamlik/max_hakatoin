@@ -220,6 +220,42 @@ export function Field({
     </label>
   );
 }
+// The native file input renders a browser-locale button that ignores the design system.
+export function FilePick({
+  accept,
+  disabled,
+  onPick,
+  label = "Выбрать файл",
+}: {
+  accept: string;
+  disabled?: boolean;
+  onPick: (file?: File) => void;
+  label?: string;
+}) {
+  return (
+    <label className={`file-pick${disabled ? " disabled" : ""}`}>
+      <Icon name="plus" />
+      <span>{label}</span>
+      <input
+        type="file"
+        accept={accept}
+        disabled={disabled}
+        onChange={(e) => {
+          onPick(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+    </label>
+  );
+}
+// Russian count agreement: 1 услуга / 2 услуги / 5 услуг.
+export function plural(n: number, one: string, few: string, many: string) {
+  const a = Math.abs(n) % 100;
+  const b = a % 10;
+  const form =
+    a >= 11 && a <= 14 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
+  return `${n} ${form}`;
+}
 export function Check({
   label,
   checked,

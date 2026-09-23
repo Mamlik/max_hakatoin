@@ -107,6 +107,13 @@ function CampaignForm({
                 ))}
             </select>
           </Field>
+          {!salons.filter((s) => s.id !== t && s.partnerEnabled).length && (
+            <p className="small muted">
+              Пока нет салонов, готовых к партнёрству. Второй владелец должен
+              включить участие в своём кабинете — после этого салон появится в
+              списке.
+            </p>
+          )}
         </>
       )}
       {source && target && (

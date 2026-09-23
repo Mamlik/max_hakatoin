@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, useApi } from "./api";
-import { Badge, Empty, Field, Load, PageTitle, useAction } from "./ui";
+import { Badge, Empty, Field, Load, PageTitle, plural, useAction } from "./ui";
 import type { Items, Service } from "./types";
 
 export interface LoyaltyReward {
@@ -43,8 +43,15 @@ export function LoyaltyPage() {
               <span className="eyebrow">{p.tenantName}</span>
               <h2>{p.serviceName}</h2>
               <p>
-                Каждые <strong>{p.visitsRequired} платных посещений</strong> →
-                ещё одно бесплатно.
+                <strong>
+                  {plural(
+                    p.visitsRequired,
+                    "платное посещение",
+                    "платных посещения",
+                    "платных посещений",
+                  )}
+                </strong>{" "}
+                → ещё одно бесплатно.
               </p>
               <progress
                 className="loyalty-progress"

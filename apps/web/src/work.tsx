@@ -18,6 +18,7 @@ import {
   BackLink,
   CommandButton,
   Icon,
+  plural,
 } from "./ui";
 import { BookingCard } from "./personal";
 import type {
@@ -132,7 +133,11 @@ export function WorkCalendar() {
         ) : (
           <Empty
             title="На этот период записей нет"
-            text="Выберите другую дату или создайте запись клиента."
+            text={
+              role === "master"
+                ? "Выберите другую дату — здесь показаны только ваши назначения."
+                : "Выберите другую дату или создайте запись клиента."
+            }
           />
         )}
       </Load>
@@ -588,7 +593,7 @@ export function CatalogPage() {
               <h3>{s.name}</h3>
               {!s.active && <Badge status="archived" />}
               <p>{s.description}</p>
-              <small>{s.serviceIds.length} услуги</small>
+              <small>{plural(s.serviceIds.length, "услуга", "услуги", "услуг")}</small>
               <div className="stack">
                 <button
                   className="button secondary"

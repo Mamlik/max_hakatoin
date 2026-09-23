@@ -303,32 +303,29 @@ async function tick() {
         [d.id],
       );
     }
+    // One short transaction per master. Sweeping every tenant inside a single transaction held the
+    // shared write gate for the whole run (~50 ms per master), stalling every booking platform-wide.
     if (Date.now() - lastSnapshots > 3600000) {
-      await tx(async (db) => {
-        await db.query("SELECT pg_advisory_xact_lock(724992)");
-        const tenants = await rows<Tenant>(
-          db,
-          "SELECT * FROM tenants WHERE status<>'archived'",
+      const tenants = await rows<Tenant>(
+        pool,
+        "SELECT * FROM tenants WHERE status<>'archived'",
+      );
+      for (const t of tenants) {
+        const staff = await rows<{ id: string }>(
+          pool,
+          "SELECT id FROM staff WHERE tenant_id=$1 AND active",
+          [t.id],
         );
-        for (const t of tenants) {
-          const staff = await rows<{ id: string }>(
-            db,
-            "SELECT id FROM staff WHERE tenant_id=$1 AND active",
-            [t.id],
-          );
-          for (const s of staff)
-            await snapshotDays(
-              db,
-              t,
-              s.id,
-              DateTime.now()
-                .setZone(t.timezone)
-                .minus({ days: 1 })
-                .toISODate()!,
-              32,
-            );
-        }
-      });
+        const from = DateTime.now()
+          .setZone(t.timezone)
+          .minus({ days: 1 })
+          .toISODate()!;
+        for (const s of staff)
+          await tx(async (db) => {
+            await db.query("SELECT pg_advisory_xact_lock(724992)");
+            await snapshotDays(db, t, s.id, from, 32);
+          });
+      }
       lastSnapshots = Date.now();
     }
     if (config.MAX_MODE === "real" && Date.now() - lastSubscription > 300000) {
