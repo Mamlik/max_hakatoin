@@ -144,6 +144,19 @@ export function useApi<T>(path: string | null, poll = false) {
 
   return { data, error, loading, reload };
 }
+// MAX documents the deep-link payload on initDataUnsafe.start_param, and it may be an
+// object rather than a plain string. Accept every shape we can safely read.
+function readStartParam(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const bag = value as Record<string, unknown>;
+    for (const key of ["value", "startParam", "start_param", "payload"]) {
+      if (typeof bag[key] === "string") return bag[key] as string;
+    }
+  }
+  return null;
+}
+const LAUNCH_PAYLOAD = /^[A-Za-z0-9_-]{1,512}$/;
 interface AuthContextValue {
   me: Me | null;
   loading: boolean;
@@ -153,12 +166,16 @@ interface AuthContextValue {
   login: (persona: string) => Promise<void>;
   logout: () => void;
   reload: () => Promise<void>;
+  launchPath: string | null;
+  clearLaunchPath: () => void;
 }
 const AuthContext = createContext<AuthContextValue>(null!);
 declare global {
   interface Window {
     WebApp?: {
       initData: string;
+      // MAX delivers the ?startapp= payload here; the signed initData may not carry it.
+      initDataUnsafe?: { start_param?: unknown };
       ready: () => void;
       expand?: () => void;
       BackButton?: {
@@ -175,24 +192,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [demo, setDemo] = useState(false),
-    [botName, setBotName] = useState("");
+    [botName, setBotName] = useState(""),
+    [launchPath, setLaunchPath] = useState<string | null>(null);
   const reload = useCallback(async () => {
     if (session) setMe(await api<Me>("/me"));
   }, []);
-  const exchange = async (initData: string) => {
+  const exchange = async (initData: string, fallbackPayload?: string | null) => {
     const auth = await api<{
       sessionToken: string;
       launchContext: string | null;
     }>("/auth/max", "POST", { initData });
     setSession(auth.sessionToken);
     await reload();
-    if (auth.launchContext) {
+    // The signed initData is preferred, but MAX may only expose the payload unsigned.
+    // /launch/resolve re-checks rights for every target, so an unsigned hint grants nothing.
+    const payload = auth.launchContext ?? fallbackPayload ?? null;
+    if (payload && LAUNCH_PAYLOAD.test(payload)) {
       try {
         const target = await api<{ path: string }>("/launch/resolve", "POST", {
-          payload: auth.launchContext,
+          payload,
         });
-        window.history.replaceState({}, "", target.path);
-        window.dispatchEvent(new PopStateEvent("popstate"));
+        setLaunchPath(target.path);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Ссылка недоступна");
       }
@@ -213,12 +233,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBotName(cfg.botName);
         await new Promise((r) => setTimeout(r, 150));
         const params = new URLSearchParams(window.location.hash.slice(1));
+        const query = new URLSearchParams(window.location.search);
         const raw =
           window.WebApp?.initData ||
           params.get("WebAppData") ||
-          new URLSearchParams(window.location.search).get("WebAppData");
+          query.get("WebAppData");
+        const startParam =
+          readStartParam(window.WebApp?.initDataUnsafe?.start_param) ??
+          params.get("start_param") ??
+          params.get("startapp") ??
+          query.get("start_param") ??
+          query.get("startapp");
         if (raw) {
-          await exchange(raw);
+          await exchange(raw, startParam);
           window.history.replaceState({}, "", window.location.pathname);
           window.WebApp?.ready();
           window.WebApp?.expand?.();
@@ -257,7 +284,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
   return (
     <AuthContext.Provider
-      value={{ me, loading, error, demo, botName, login, logout, reload }}
+      value={{
+        me,
+        loading,
+        error,
+        demo,
+        botName,
+        login,
+        logout,
+        reload,
+        launchPath,
+        clearLaunchPath: () => setLaunchPath(null),
+      }}
     >
       {children}
     </AuthContext.Provider>

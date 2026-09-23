@@ -46,6 +46,13 @@ function App() {
   const location = useLocation();
   const tenantId = location.pathname.match(/^\/work\/([^/]+)/)?.[1];
   const member = auth.me?.memberships.find((m) => m.tenantId === tenantId);
+  // A deep link resolves to a path while AuthProvider sits outside the router,
+  // so the router performs the navigation once the path is known.
+  React.useEffect(() => {
+    if (!auth.launchPath) return;
+    navigate(auth.launchPath, { replace: true });
+    auth.clearLaunchPath();
+  }, [auth.launchPath]);
   React.useEffect(() => {
     const button = window.WebApp?.BackButton;
     if (!button) return;

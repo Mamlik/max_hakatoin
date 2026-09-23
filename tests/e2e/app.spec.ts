@@ -82,3 +82,30 @@ test("owner can view loyalty settings and customer progress", async ({
     ),
   ).toBe(true);
 });
+
+// A MAX deep link (?startapp=…) must open the target screen, not the home screen.
+// The payload may arrive unsigned, so the app reads it from both places.
+test("deep links open the salon storefront and the loyalty screen", async ({
+  page,
+  request,
+}) => {
+  const issued = await request.post("/api/v1/demo/identity", {
+    data: { persona: "client" },
+  });
+  expect(issued.ok(), await issued.text()).toBeTruthy();
+  const { data } = await issued.json();
+  const launch = (payload: string) =>
+    `/#WebAppData=${encodeURIComponent(data.initData)}&startapp=${payload}`;
+
+  await page.goto(launch("s_line"));
+  await expect(page).toHaveURL(/\/s\/line$/);
+  await expect(
+    page.getByRole("heading", { name: "Линия · студия волос" }),
+  ).toBeVisible();
+
+  await page.goto(launch("loyalty"));
+  await expect(page).toHaveURL(/\/me\/loyalty$/);
+  await expect(
+    page.getByRole("heading", { name: "Бесплатные посещения", exact: true }),
+  ).toBeVisible();
+});
