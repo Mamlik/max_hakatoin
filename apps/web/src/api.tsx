@@ -227,8 +227,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let active = true;
     void (async () => {
       try {
-        const cfg = await api<{ demo: boolean; botName: string }>("/config");
-        if (!active) return;
+        // One failed /config used to leave the app on a dead-end screen with no way
+        // back: no persona list in demo, and "Откройте приложение в MAX" in production.
+        let cfg: { demo: boolean; botName: string } | undefined;
+        for (let attempt = 0; attempt < 3 && active; attempt++) {
+          try {
+            cfg = await api<{ demo: boolean; botName: string }>("/config");
+            break;
+          } catch (cause) {
+            if (attempt === 2) throw cause;
+            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          }
+        }
+        if (!active || !cfg) return;
         setDemo(cfg.demo);
         setBotName(cfg.botName);
         await new Promise((r) => setTimeout(r, 150));

@@ -109,3 +109,47 @@ test("deep links open the salon storefront and the loyalty screen", async ({
     page.getByRole("heading", { name: "Бесплатные посещения", exact: true }),
   ).toBeVisible();
 });
+
+// A service no master provides never yields a slot on any date, so both sides must say so:
+// the publish checklist only requires one covered service.
+test("a service nobody provides is flagged to the owner", async ({ page }) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Владелец · Линия Управление студией волос и партнёрствами",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Услуги и мастера", exact: true })
+    .click();
+
+  const covered = page
+    .locator(".service-row")
+    .filter({ hasText: "Стрижка и укладка" });
+  await expect(covered).toBeVisible();
+  await expect(covered.getByText("Никто не оказывает")).toHaveCount(0);
+
+  // Reruns share the demo database, so only create the service the first time.
+  const orphan = page
+    .locator(".service-row")
+    .filter({ hasText: "Услуга без мастера" })
+    .first();
+  if ((await orphan.count()) === 0) {
+    await page
+      .getByRole("button", { name: "Добавить услугу", exact: true })
+      .click();
+    const form = page.locator(".modal");
+    await form.locator("input[type=text]").first().fill("Услуга без мастера");
+    await form.locator("input[type=number]").nth(0).fill("30");
+    await form.locator("input[type=number]").nth(1).fill("1000");
+    await form.getByRole("button", { name: "Сохранить" }).click();
+  }
+  await expect(orphan.getByText("Никто не оказывает")).toBeVisible();
+});

@@ -45,6 +45,8 @@ export function BookingCard({
   work?: boolean;
 }) {
   const date = new Date(b.startAt);
+  // The salon's own zone, so the card agrees with the slot grid the visit was picked from.
+  const zone = b.timezoneSnapshot || "Europe/Moscow";
   return (
     <Link
       to={
@@ -56,20 +58,20 @@ export function BookingCard({
         <span>
           {date.toLocaleDateString("ru-RU", {
             month: "short",
-            timeZone: "Europe/Moscow",
+            timeZone: zone,
           })}
         </span>
         <strong>
           {date.toLocaleDateString("ru-RU", {
             day: "2-digit",
-            timeZone: "Europe/Moscow",
+            timeZone: zone,
           })}
         </strong>
         <small>
           {date.toLocaleTimeString("ru-RU", {
             hour: "2-digit",
             minute: "2-digit",
-            timeZone: "Europe/Moscow",
+            timeZone: zone,
           })}
         </small>
       </div>

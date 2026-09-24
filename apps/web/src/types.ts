@@ -94,6 +94,7 @@ export interface Booking {
   serviceNameSnapshot: string;
   startAt: string;
   endAt: string;
+  timezoneSnapshot: string;
   status: string;
   version: number;
   priceMinorSnapshot?: number;
