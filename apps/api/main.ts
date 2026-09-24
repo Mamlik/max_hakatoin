@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Module } from "@nestjs/common";
+import { HttpException, Module } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import {
   FastifyAdapter,
@@ -26,6 +26,11 @@ class AppModule {}
 export async function createApp() {
   const adapter = new FastifyAdapter({
     bodyLimit: 32768,
+    // Requests reach the API only through Caddy, so the caller's address lives in
+    // X-Forwarded-For. Without this every visitor shares one rate-limit bucket.
+    // Trust exactly one hop: the address Caddy itself observed. Anything a client
+    // puts in the header sits further left and is ignored, so the limit stands.
+    trustProxy: 1,
     logger: {
       level: "info",
       redact: ["req.headers.authorization", "req.headers.x-max-bot-api-secret"],
@@ -44,12 +49,24 @@ export async function createApp() {
   await server.register(rateLimit, {
     max: config.APP_ENV === "test" ? 100000 : 180,
     timeWindow: "1 minute",
-    errorResponseBuilder: () => ({
-      error: {
-        code: "RATE_LIMITED",
-        message: "Слишком много запросов. Повторите через минуту.",
-      },
-    }),
+    // Signed-in people get their own budget. Keying on the address alone made everyone
+    // behind one office or venue NAT share a single bucket and throttle each other.
+    keyGenerator: (request) =>
+      request.headers.authorization
+        ? `session:${hash(request.headers.authorization)}`
+        : `address:${request.ip}`,
+    // The plugin throws whatever this returns. A plain object carries no status, so
+    // Nest turned a rate-limited request into a 500; an HttpException keeps it a 429.
+    errorResponseBuilder: () =>
+      new HttpException(
+        {
+          error: {
+            code: "RATE_LIMITED",
+            message: "Слишком много запросов. Повторите через минуту.",
+          },
+        },
+        429,
+      ),
   });
   server.addHook("onSend", async (_request, reply, payload) => {
     reply

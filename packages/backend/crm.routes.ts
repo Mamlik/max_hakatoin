@@ -425,7 +425,7 @@ function accessRoutes(app: FastifyInstance) {
       const inv = required(
         await one<Invite & { tenant_name: string }>(
           db,
-          "SELECT i.*,t.name tenant_name FROM invites i JOIN tenants t ON t.id=i.tenant_id WHERE token_hash=$1 AND status IN ('pending','client_confirmed') AND expires_at>now()",
+          "SELECT i.*,t.name tenant_name FROM invites i JOIN tenants t ON t.id=i.tenant_id WHERE i.token_hash=$1 AND i.status IN ('pending','client_confirmed') AND i.expires_at>now()",
           [hash(b.token)],
         ),
       );

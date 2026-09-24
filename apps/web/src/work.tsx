@@ -479,6 +479,13 @@ export function CatalogPage() {
   const services = useApi<Items<Service>>(`/work/${t}/services`),
     staff = useApi<Items<Staff>>(`/work/${t}/staff`),
     categories = useApi<Items<Category>>(`/work/${t}/categories`);
+  // A service nobody provides never yields a slot, and the publish checklist only
+  // requires one covered service — so the owner needs to see the gap here.
+  const uncovered = (serviceId: string) =>
+    !!staff.data &&
+    !staff.data.items.some(
+      (m) => m.active && m.serviceIds.includes(serviceId),
+    );
   const [modal, setModal] = useState<"service" | "staff" | "category" | null>(
       null,
     ),
@@ -531,9 +538,19 @@ export function CatalogPage() {
               <div>
                 <h3>
                   {s.name} {!s.active && <Badge status="archived" />}
+                  {s.active && uncovered(s.id) && (
+                    <span className="badge pending">Никто не оказывает</span>
+                  )}
                 </h3>
                 <p>{s.description}</p>
                 <small>{s.durationMin} минут</small>
+                {s.active && uncovered(s.id) && (
+                  <p className="small muted">
+                    Клиенты не увидят свободного времени, пока услугу не
+                    назначат мастеру — кнопка «Назначить услуги» в карточке
+                    мастера ниже.
+                  </p>
+                )}
               </div>
               <div>
                 <strong>{money(s.priceMinor)}</strong>

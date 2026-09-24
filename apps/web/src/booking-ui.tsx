@@ -378,6 +378,12 @@ export function BookingForm({
                     </button>
                   ))}
                 </div>
+              ) : availableStaff && !availableStaff.length ? (
+                // No master provides this service, so no date will ever have slots.
+                <Empty
+                  title="Услугу пока некому оказывать"
+                  text="Салон ещё не назначил мастера на эту услугу. Выберите другую услугу или свяжитесь с салоном."
+                />
               ) : (
                 <Empty
                   title="Нет свободных интервалов"
@@ -536,9 +542,9 @@ export function BookingPage({ work = false }: { work?: boolean }) {
                   )}
                   <dl>
                     <dt>Начало</dt>
-                    <dd>{dateTime(b.startAt)}</dd>
+                    <dd>{dateTime(b.startAt, b.timezoneSnapshot)}</dd>
                     <dt>Окончание</dt>
-                    <dd>{dateTime(b.endAt)}</dd>
+                    <dd>{dateTime(b.endAt, b.timezoneSnapshot)}</dd>
                     <dt>Мастер</dt>
                     <dd>{b.staffName}</dd>
                     {b.totalMinor !== undefined && (
@@ -554,6 +560,12 @@ export function BookingPage({ work = false }: { work?: boolean }) {
                       </>
                     )}
                   </dl>
+                  {b.timezoneSnapshot !== "Europe/Moscow" && (
+                    <p className="small muted">
+                      Время указано в часовом поясе салона (
+                      {b.timezoneSnapshot}).
+                    </p>
+                  )}
                   <div className="inline-actions">
                     {b.allowedActions.includes("reschedule") && (
                       <Link

@@ -1364,3 +1364,42 @@ describe("session lifetime", () => {
     expect((await req("GET", "/api/v1/me", token)).status).toBe(401);
   });
 });
+
+describe("invite links", () => {
+  it("inspects a staff invite instead of failing on an ambiguous column", async () => {
+    const owner = await login("owner-a");
+    const invite = await req<{ token: string }>(
+      "POST",
+      `/api/v1/work/${f("salon-a")}/staff-invites`,
+      owner,
+      { role: "admin" },
+    );
+    expect(invite.status, JSON.stringify(invite.error)).toBe(201);
+
+    // Both invites and tenants have a status column, so the unqualified WHERE used to
+    // raise 42702 and surface as a 503 on every invite link.
+    const guest = await login("new");
+    const seen = await req<{ kind: string; role: string; tenantName: string }>(
+      "POST",
+      "/api/v1/invites/inspect",
+      guest,
+      { token: invite.data.token },
+    );
+    expect(seen.status, JSON.stringify(seen.error)).toBe(200);
+    expect(seen.data.kind).toBe("staff");
+    expect(seen.data.role).toBe("admin");
+
+    const accepted = await req("POST", "/api/v1/invites/accept", guest, {
+      token: invite.data.token,
+      explicitConfirmation: true,
+    });
+    expect(accepted.status, JSON.stringify(accepted.error)).toBe(201);
+    expect(
+      await one(
+        pool,
+        "SELECT id FROM memberships WHERE tenant_id=$1 AND role='admin' AND status='active'",
+        [f("salon-a")],
+      ),
+    ).toBeTruthy();
+  });
+});
