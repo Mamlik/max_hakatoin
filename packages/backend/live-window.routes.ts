@@ -569,8 +569,39 @@ export function liveWindowRoutes(app: FastifyInstance) {
         fail(409, "OFFER_NOT_AVAILABLE", "Предложение больше недоступно");
       const tenant = await tenantById(db, offer.tenant_id);
       let linked: Booking | undefined;
-      if (request.linked_booking_id)
+      if (request.linked_booking_id) {
         linked = required(await one<Booking>(db, "SELECT * FROM bookings WHERE id=$1 AND tenant_id=$2 AND user_id=$3 FOR UPDATE", [request.linked_booking_id, offer.tenant_id, actor.id]));
+        if (
+          linked.status !== "confirmed" ||
+          linked.version !== request.linked_booking_version
+        ) {
+          await db.query(
+            "UPDATE live_window_offers SET status='revoked',terminal_reason='LINKED_BOOKING_CHANGED',version=version+1,updated_at=now() WHERE id=$1",
+            [offer.id],
+          );
+          await db.query(
+            "UPDATE waitlist_requests SET status='suspended_incompatible',suspension_reason='LINKED_BOOKING_CHANGED',version=version+1,updated_at=now() WHERE id=$1",
+            [request.id],
+          );
+          await db.query(
+            "UPDATE live_windows SET status='matching',version=version+1,updated_at=now() WHERE id=$1 AND status='offering'",
+            [window.id],
+          );
+          await audit(
+            db,
+            offer.tenant_id,
+            actor.id,
+            "live_window.offer_revoked",
+            offer.id,
+            { reason: "LINKED_BOOKING_CHANGED" },
+          );
+          await advanceWindow(db, window.id);
+          return {
+            status: "unavailable",
+            reason: "LINKED_BOOKING_CHANGED",
+          };
+        }
+      }
       try {
         const quote = await createQuote(db, actor, tenant, {
           serviceId: request.service_id,

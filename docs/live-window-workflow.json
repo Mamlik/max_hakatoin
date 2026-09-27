@@ -2,22 +2,23 @@
   "schemaVersion": 1,
   "feature": "live-window-lite",
   "branch": "codex/live-window",
-  "phase": "IMPLEMENTED",
+  "phase": "DONE",
   "specPath": "docs/live-window-spec.md",
   "reviewReportPath": "docs/live-window-review.md",
   "implementationReportPath": "docs/live-window-implementation.md",
   "testReportPath": "docs/live-window-test-report.md",
   "completedPhases": [
     "review",
-    "implementation"
+    "implementation",
+    "testing"
   ],
   "attempts": {
     "review": 1,
     "implementation": 1,
-    "testing": 0
+    "testing": 1
   },
-  "lastCompletedMilestone": "implementation-v0.2",
+  "lastCompletedMilestone": "testing-v0.2",
   "lastError": null,
   "blockedReason": null,
-  "updatedAt": "2026-09-27T14:49:00+03:00"
+  "updatedAt": "2026-09-27T20:00:00+03:00"
 }

@@ -107,7 +107,7 @@ export async function eligible(db: DB, d: Delivery): Promise<string | null> {
     return "SERVICE_DISABLED";
   return null;
 }
-async function processDelivery(id: string) {
+export async function processDelivery(id: string) {
   const d = await one<Delivery>(
     pool,
     "UPDATE deliveries SET state='sending',lease_until=now()+interval '30 seconds',fence=fence+1 WHERE id=$1 AND state IN ('scheduled','retry_wait') AND due_at<=now() RETURNING *",

@@ -236,6 +236,31 @@ export async function advanceWindow(db: DB, windowId: string) {
     "UPDATE live_windows SET status='matching',version=version+1,updated_at=now() WHERE id=$1",
     [window.id],
   );
+  await db.query(
+    `INSERT INTO audit_log(tenant_id,actor_id,action,object_id,details)
+     SELECT r.tenant_id,r.user_id,'live_window.candidate_skipped',r.id,
+       jsonb_build_object(
+         'windowId',$3::text,
+         'reason',CASE
+           WHEN EXISTS(SELECT 1 FROM live_window_offers active WHERE active.user_id=r.user_id AND active.status IN ('pending_delivery','offered','accepted')) THEN 'ACTIVE_OFFER'
+           WHEN (SELECT count(*) FROM live_window_offers recent WHERE recent.request_id=r.id AND recent.created_at>now()-interval '24 hours')>=3 THEN 'REQUEST_DAILY_LIMIT'
+           ELSE 'USER_COOLDOWN'
+         END
+       )
+     FROM waitlist_requests r
+     WHERE r.tenant_id=$1 AND r.service_id=$2 AND r.status='active' AND r.expires_at>now()
+       AND (
+         EXISTS(SELECT 1 FROM live_window_offers active WHERE active.user_id=r.user_id AND active.status IN ('pending_delivery','offered','accepted')) OR
+         (SELECT count(*) FROM live_window_offers recent WHERE recent.request_id=r.id AND recent.created_at>now()-interval '24 hours')>=3 OR
+         EXISTS(SELECT 1 FROM live_window_offers recent_user WHERE recent_user.user_id=r.user_id AND recent_user.created_at>now()-interval '30 minutes')
+       )
+       AND NOT EXISTS(
+         SELECT 1 FROM audit_log a
+         WHERE a.action='live_window.candidate_skipped' AND a.object_id=r.id
+           AND a.details->>'windowId'=$3::text
+       )`,
+    [window.tenant_id, window.service_id, window.id],
+  );
   const candidates = await rows<WaitlistRequest & { staff_ids: string[] }>(
     db,
     `SELECT r.*,COALESCE(array_agg(rs.staff_id) FILTER(WHERE rs.staff_id IS NOT NULL),'{}') staff_ids
