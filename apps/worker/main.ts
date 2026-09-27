@@ -11,6 +11,10 @@ import {
 import { notify } from "../../packages/backend/notifications.js";
 import { snapshotDays } from "../../packages/backend/scheduling.js";
 import type { Tenant } from "../../packages/backend/types.js";
+import {
+  advanceWindow,
+  runLiveWindowCycle,
+} from "../../packages/backend/live-window.js";
 
 interface Delivery {
   id: string;
@@ -32,6 +36,7 @@ interface Delivery {
   body: string;
   object_id: string | null;
   kind: string;
+  live_window_offer_id: string | null;
 }
 export async function eligible(db: DB, d: Delivery): Promise<string | null> {
   if (d.not_after.getTime() <= Date.now()) return "EXPIRED";
@@ -51,6 +56,21 @@ export async function eligible(db: DB, d: Delivery): Promise<string | null> {
     if (!b || b.version !== d.booking_version) return "SUPERSEDED";
     if (d.category === "reminder" && b.status !== "confirmed")
       return "SUPERSEDED";
+  }
+  if (d.live_window_offer_id) {
+    const offer = await one(
+      db,
+      `SELECT o.id FROM live_window_offers o
+       JOIN live_windows w ON w.id=o.window_id AND w.tenant_id=o.tenant_id
+       JOIN waitlist_requests r ON r.id=o.request_id AND r.tenant_id=o.tenant_id
+       JOIN live_window_settings s ON s.tenant_id=o.tenant_id
+       WHERE o.id=$1 AND o.status='pending_delivery' AND r.status='active'
+         AND w.status='offering' AND w.start_at>now() AND s.enabled AND NOT s.paused
+         AND COALESCE((SELECT (value->>'enabled')::boolean FROM system_state WHERE key='live_window_allowlist'),false)
+         AND NOT COALESCE((SELECT (value->>'enabled')::boolean FROM system_state WHERE key='live_window_kill_switch'),false)`,
+      [d.live_window_offer_id],
+    );
+    if (!offer) return "LIVE_WINDOW_SUPPRESSED";
   }
   if (d.category === "welcome") return null;
   if (d.category === "work") {
@@ -79,6 +99,8 @@ export async function eligible(db: DB, d: Delivery): Promise<string | null> {
     (!p.offer_bot_enabled || !p.partner_allowed || !p.partner_program_enabled)
   )
     return "CONSENT_REVOKED";
+  if (d.category === "live_window" && !p.offer_bot_enabled)
+    return "OFFER_NOTIFICATIONS_DISABLED";
   if (d.category === "reminder" && !p.reminder_bot_enabled)
     return "REMINDERS_DISABLED";
   if (d.category === "service" && !p.service_bot_enabled)
@@ -110,6 +132,7 @@ async function processDelivery(id: string) {
       "UPDATE deliveries SET state='suppressed',last_error=$3,lease_until=NULL WHERE id=$1 AND fence=$2",
       [id, d.fence, invalid],
     );
+    await failLiveWindowDelivery(d, invalid);
     return;
   }
   try {
@@ -119,9 +142,12 @@ async function processDelivery(id: string) {
         "UPDATE deliveries SET state='suppressed',last_error=$3 WHERE id=$1 AND fence=$2",
         [id, d.fence, fresh],
       );
+      await failLiveWindowDelivery(d, fresh);
       return;
     }
-    const payload = d.kind.startsWith("loyalty.")
+    const payload = d.live_window_offer_id
+      ? `lw_${d.live_window_offer_id}`
+      : d.kind.startsWith("loyalty.")
       ? "loyalty"
       : d.booking_id
         ? `b_${d.booking_id}`
@@ -145,6 +171,17 @@ async function processDelivery(id: string) {
       "INSERT INTO delivery_attempts(delivery_id,attempt,result) VALUES($1,$2,'sent')",
       [id, d.attempts + 1],
     );
+    if (d.live_window_offer_id)
+      await tx(async (db) => {
+        await db.query("SELECT pg_advisory_xact_lock(724992)");
+        await db.query(
+          `UPDATE live_window_offers o SET status='offered',offered_at=now(),
+             expires_at=now()+make_interval(mins=>s.offer_ttl_minutes),version=o.version+1,updated_at=now()
+             FROM live_window_settings s
+            WHERE o.id=$1 AND o.tenant_id=s.tenant_id AND o.status='pending_delivery'`,
+          [d.live_window_offer_id],
+        );
+      });
   } catch (e) {
     const error =
       e instanceof MaxError ? e : new MaxError("TRANSPORT_UNAVAILABLE", 5000);
@@ -172,7 +209,27 @@ async function processDelivery(id: string) {
         "INSERT INTO delivery_attempts(delivery_id,attempt,result) VALUES($1,$2,$3)",
         [id, attempts, error.code],
       );
+    if (d.live_window_offer_id && ["failed", "suppressed"].includes(state))
+      await failLiveWindowDelivery(d, error.code);
   }
+}
+async function failLiveWindowDelivery(d: Delivery, reason: string) {
+  if (!d.live_window_offer_id) return;
+  await tx(async (db) => {
+    await db.query("SELECT pg_advisory_xact_lock(724992)");
+    const offer = await one<{ window_id: string }>(
+      db,
+      "UPDATE live_window_offers SET status='delivery_failed',terminal_reason=$2,version=version+1,updated_at=now() WHERE id=$1 AND status='pending_delivery' RETURNING window_id",
+      [d.live_window_offer_id, reason],
+    );
+    if (offer) {
+      await db.query(
+        "UPDATE live_windows SET status='matching',version=version+1,updated_at=now() WHERE id=$1 AND status='offering'",
+        [offer.window_id],
+      );
+      await advanceWindow(db, offer.window_id);
+    }
+  });
 }
 export async function processInbox() {
   await tx(async (db) => {
@@ -235,6 +292,37 @@ export async function processInbox() {
               [u.id],
             );
             if (state === "active")
+              await db.query(
+                `UPDATE waitlist_requests r SET status='active',suspension_reason=NULL,version=r.version+1,updated_at=now()
+                 WHERE r.user_id=$1 AND r.status='paused_channel_unavailable' AND r.expires_at>now()
+                   AND EXISTS(SELECT 1 FROM live_window_settings s WHERE s.tenant_id=r.tenant_id AND s.enabled AND NOT s.paused)
+                   AND COALESCE((SELECT (value->>'enabled')::boolean FROM system_state WHERE key='live_window_allowlist'),false)
+                   AND NOT COALESCE((SELECT (value->>'enabled')::boolean FROM system_state WHERE key='live_window_kill_switch'),false)`,
+                [u.id],
+              );
+            else {
+              const offers = await rows<{ id: string; window_id: string }>(
+                db,
+                "UPDATE live_window_offers SET status='revoked',terminal_reason='CHANNEL_UNAVAILABLE',version=version+1,updated_at=now() WHERE user_id=$1 AND status IN ('pending_delivery','offered') RETURNING id,window_id",
+                [u.id],
+              );
+              await db.query(
+                "UPDATE waitlist_requests SET status='paused_channel_unavailable',suspension_reason='MAX_CHANNEL_UNAVAILABLE',version=version+1,updated_at=now() WHERE user_id=$1 AND status='active'",
+                [u.id],
+              );
+              for (const offer of offers) {
+                await db.query(
+                  "UPDATE deliveries SET state='suppressed',last_error='CHANNEL_UNAVAILABLE' WHERE live_window_offer_id=$1 AND state IN ('scheduled','retry_wait')",
+                  [offer.id],
+                );
+                await db.query(
+                  "UPDATE live_windows SET status='matching',version=version+1,updated_at=now() WHERE id=$1 AND status='offering'",
+                  [offer.window_id],
+                );
+                await advanceWindow(db, offer.window_id);
+              }
+            }
+            if (state === "active")
               await notify(
                 db,
                 u.id,
@@ -269,6 +357,7 @@ async function tick() {
   running = true;
   try {
     await processInbox();
+    await runLiveWindowCycle();
     await tx(async (db) => {
       await db.query("SELECT pg_advisory_xact_lock(724992)");
       await db.query(

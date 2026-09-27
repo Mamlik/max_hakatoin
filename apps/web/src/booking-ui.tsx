@@ -390,6 +390,15 @@ export function BookingForm({
                   text="Попробуйте другой день или другого мастера."
                 />
               )}
+              {!work && selectedSalon && serviceId && (
+                <div className="hint-row">
+                  <Icon name="bell" />
+                  <span>Не нашли удобное время?</span>
+                  <Link to={`/me/waitlist/new?code=${encodeURIComponent(selectedSalon.publicCode)}&service=${serviceId}${staffId ? `&staff=${staffId}` : ""}`}>
+                    Сообщить, если освободится
+                  </Link>
+                </div>
+              )}
             </Load>
           ) : (
             <p className="muted">Сначала выберите услугу.</p>
@@ -573,6 +582,11 @@ export function BookingPage({ work = false }: { work?: boolean }) {
                         to={`${work ? `/work/${t}` : "/me"}/bookings/${id}/reschedule`}
                       >
                         Перенести
+                      </Link>
+                    )}
+                    {!work && b.allowedActions.includes("reschedule") && b.publicCode && (
+                      <Link className="button secondary" to={`/me/waitlist/new?code=${encodeURIComponent(b.publicCode)}&service=${b.serviceId}&staff=${b.staffId}&linked=${b.id}`}>
+                        Хочу раньше
                       </Link>
                     )}
                     {b.allowedActions.includes("cancel") && (

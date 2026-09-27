@@ -9,6 +9,7 @@ import { seed, fixtureId as f } from "../packages/db/seed.js";
 import { signInitData } from "../packages/backend/auth.js";
 import { config } from "../packages/backend/config.js";
 import { processInbox } from "../apps/worker/main.js";
+import { runLiveWindowCycle } from "../packages/backend/live-window.js";
 import { redis } from "../packages/max-api/client.js";
 import type { Campaign as CampaignDB } from "../packages/backend/types.js";
 let app: NestFastifyApplication;
@@ -139,6 +140,18 @@ beforeAll(async () => {
           "../packages/db/migrations/003_catalog_media.sql",
           import.meta.url,
         ),
+        "utf8",
+      ),
+    );
+  if (
+    !(await one(
+      pool,
+      "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='waitlist_requests'",
+    ))
+  )
+    await pool.query(
+      await readFile(
+        new URL("../packages/db/migrations/004_live_window.sql", import.meta.url),
         "utf8",
       ),
     );
@@ -1416,5 +1429,220 @@ describe("invite links", () => {
         [f("salon-a")],
       ),
     ).toBeTruthy();
+  });
+});
+
+describe("Live Window Lite", () => {
+  const date = () =>
+    DateTime.now().setZone("Europe/Moscow").plus({ days: 1 }).toISODate()!;
+
+  async function enable() {
+    const owner = await login("owner-a");
+    await pool.query(
+      "INSERT INTO system_state(key,value) VALUES('live_window_allowlist','{\"enabled\":true}'),('live_window_kill_switch','{\"enabled\":false}') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+    );
+    const result = await req(
+      "PATCH",
+      `/api/v1/work/${f("salon-a")}/live-window/settings`,
+      owner,
+      {
+        expectedVersion: 0,
+        enabled: true,
+        paused: false,
+        pauseReason: null,
+        offerTtlMinutes: 10,
+        minimumNoticeMinutes: 0,
+        quietStart: "00:00",
+        quietEnd: "23:59",
+      },
+    );
+    expect(result.status, JSON.stringify(result.error)).toBe(200);
+  }
+
+  async function candidate(maxId: string) {
+    const token = await login(maxId);
+    const user = (await one<{ id: string }>(
+      pool,
+      "SELECT id FROM users WHERE max_user_id=$1",
+      [maxId],
+    ))!;
+    await pool.query(
+      "INSERT INTO bot_channels(user_id,state,generation) VALUES($1,'active',1) ON CONFLICT(user_id) DO UPDATE SET state='active',generation=bot_channels.generation+1",
+      [user.id],
+    );
+    return { token, userId: user.id };
+  }
+
+  async function wait(
+    token: string,
+    linkedBookingId?: string,
+    start = "10:00",
+    end = "11:00",
+  ) {
+    return req<{ id: string; version: number }>(
+      "POST",
+      "/api/v1/me/waitlist-requests",
+      token,
+      {
+        tenantId: f("salon-a"),
+        serviceId: f("service-a-0"),
+        staffIds: [f("staff-a-0")],
+        ...(linkedBookingId ? { linkedBookingId } : {}),
+        dateFrom: date(),
+        dateTo: date(),
+        weekdays: [DateTime.fromISO(date()).weekday],
+        dailyStartLocal: start,
+        dailyEndLocal: end,
+        minimumNoticeMinutes: 0,
+        consentVersion: "live-window-v1",
+        consentSource: "mini_app",
+      },
+    );
+  }
+
+  async function release(holder: string, bookingId: string) {
+    const cancelled = await req(
+      "POST",
+      `/api/v1/me/bookings/${bookingId}/cancel`,
+      holder,
+      { expectedVersion: 1 },
+    );
+    expect(cancelled.status, JSON.stringify(cancelled.error)).toBe(201);
+    await runLiveWindowCycle();
+  }
+
+  async function offerFor(userId: string) {
+    const offer = (await one<{ id: string; version: number; request_id: string }>(
+      pool,
+      "SELECT id,version,request_id FROM live_window_offers WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1",
+      [userId],
+    ))!;
+    await pool.query(
+      "UPDATE live_window_offers SET status='offered',offered_at=now(),expires_at=now()+interval '10 minutes',version=version+1 WHERE id=$1",
+      [offer.id],
+    );
+    return { ...offer, version: offer.version + 1 };
+  }
+
+  it("matches FIFO once, books atomically, and preserves accept idempotency", async () => {
+    await enable();
+    const holder = await login("client");
+    const occupied = await book(holder, await quote(holder));
+    const first = await candidate("900010");
+    const second = await candidate("900011");
+    const r1 = await wait(first.token);
+    const r2 = await wait(second.token);
+    expect(r1.status, JSON.stringify(r1.error)).toBe(201);
+    expect(r2.status, JSON.stringify(r2.error)).toBe(201);
+    await pool.query(
+      "UPDATE waitlist_requests SET priority_at=CASE id WHEN $1 THEN now()-interval '2 hours' ELSE now()-interval '1 hour' END WHERE id=ANY($2::uuid[])",
+      [r1.data.id, [r1.data.id, r2.data.id]],
+    );
+    await release(holder, occupied.data.id);
+    await runLiveWindowCycle();
+    expect(
+      Number(
+        (await one<{ n: string }>(pool, "SELECT count(*)::text n FROM live_windows"))!.n,
+      ),
+    ).toBe(1);
+    expect(
+      Number(
+        (await one<{ n: string }>(pool, "SELECT count(*)::text n FROM live_window_offers"))!.n,
+      ),
+    ).toBe(1);
+    const offer = await offerFor(first.userId);
+    expect(offer.request_id).toBe(r1.data.id);
+    const key = randomUUID();
+    const accepted = await req<{ status: string; booking: { id: string } }>(
+      "POST",
+      `/api/v1/me/live-window-offers/${offer.id}/accept`,
+      first.token,
+      { expectedVersion: offer.version, confirmedTermsVersion: "booking-p0-v1" },
+      key,
+    );
+    expect(accepted.status, JSON.stringify(accepted.error)).toBe(201);
+    expect(accepted.data.status).toBe("booked");
+    const repeat = await req<{ status: string; booking: { id: string } }>(
+      "POST",
+      `/api/v1/me/live-window-offers/${offer.id}/accept`,
+      first.token,
+      { expectedVersion: offer.version, confirmedTermsVersion: "booking-p0-v1" },
+      key,
+    );
+    expect(repeat.data.booking.id).toBe(accepted.data.booking.id);
+    const changed = await req(
+      "POST",
+      `/api/v1/me/live-window-offers/${offer.id}/accept`,
+      first.token,
+      { expectedVersion: offer.version, confirmedTermsVersion: "booking-p0-v1", confirmOverlap: true },
+      key,
+    );
+    expect(changed.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+  });
+
+  it("lets an ordinary booking win while an offer is open", async () => {
+    await enable();
+    const holder = await login("client");
+    const occupied = await book(holder, await quote(holder));
+    const waiting = await candidate("900012");
+    expect((await wait(waiting.token)).status).toBe(201);
+    await release(holder, occupied.data.id);
+    const offer = await offerFor(waiting.userId);
+    const ordinary = await candidate("900013");
+    expect((await book(ordinary.token, await quote(ordinary.token))).status).toBe(201);
+    const lost = await req<{ status: string }>(
+      "POST",
+      `/api/v1/me/live-window-offers/${offer.id}/accept`,
+      waiting.token,
+      { expectedVersion: offer.version, confirmedTermsVersion: "booking-p0-v1" },
+    );
+    expect(lost.data.status).toBe("lost");
+    expect(
+      (await one<{ status: string }>(pool, "SELECT status FROM waitlist_requests WHERE id=$1", [offer.request_id]))!.status,
+    ).toBe("active");
+  });
+
+  it("moves a linked booking without cascading its old slot", async () => {
+    await enable();
+    const holder = await login("client");
+    const occupied = await book(holder, await quote(holder));
+    const waiting = await candidate("900014");
+    const later = await book(waiting.token, await quote(waiting.token, "a", 12));
+    const request = await wait(waiting.token, later.data.id);
+    expect(request.status, JSON.stringify(request.error)).toBe(201);
+    await release(holder, occupied.data.id);
+    const offer = await offerFor(waiting.userId);
+    const accepted = await req<{ status: string; booking: { id: string } }>(
+      "POST",
+      `/api/v1/me/live-window-offers/${offer.id}/accept`,
+      waiting.token,
+      { expectedVersion: offer.version, confirmedTermsVersion: "booking-p0-v1" },
+    );
+    expect(accepted.data.booking.id).toBe(later.data.id);
+    await runLiveWindowCycle();
+    expect(
+      Number((await one<{ n: string }>(pool, "SELECT count(*)::text n FROM live_windows"))!.n),
+    ).toBe(1);
+    const event = await one<{ payload: { cascade: boolean } }>(
+      pool,
+      "SELECT payload FROM domain_outbox WHERE event_key LIKE $1 ORDER BY created_at DESC LIMIT 1",
+      [`booking.slot_released:${later.data.id}:%`],
+    );
+    expect(event?.payload.cascade).toBe(false);
+  });
+
+  it("keeps requests and offers tenant scoped and denies the master queue", async () => {
+    await enable();
+    const holder = await login("client");
+    const occupied = await book(holder, await quote(holder));
+    const waiting = await candidate("900015");
+    const request = await wait(waiting.token);
+    await release(holder, occupied.data.id);
+    const offer = await offerFor(waiting.userId);
+    const foreign = await candidate("900016");
+    expect((await req("GET", `/api/v1/me/waitlist-requests/${request.data.id}`, foreign.token)).status).toBe(404);
+    expect((await req("GET", `/api/v1/me/live-window-offers/${offer.id}`, foreign.token)).status).toBe(404);
+    const master = await login("master");
+    expect((await req("GET", `/api/v1/work/${f("salon-a")}/live-window/windows`, master)).status).toBe(403);
   });
 });

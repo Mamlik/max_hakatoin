@@ -410,6 +410,17 @@ export function identityRoutes(app: FastifyInstance) {
         );
         return { path: "/me/offers" };
       }
+      if (b.payload.startsWith("lw_") && z.uuid().safeParse(b.payload.slice(3)).success) {
+        const offerId = b.payload.slice(3);
+        required(
+          await one(
+            db,
+            "SELECT id FROM live_window_offers WHERE id=$1 AND user_id=$2",
+            [offerId, actor.id],
+          ),
+        );
+        return { path: `/me/live-window/offers/${offerId}` };
+      }
       return fail(404, "NOT_FOUND", "Ссылка недействительна");
     },
   );

@@ -235,6 +235,46 @@ export interface Weekday {
   weekday: number;
   intervals: Interval[];
 }
+export interface WaitlistRequest {
+  id: string;
+  tenantId: string;
+  serviceId: string;
+  linkedBookingId: string | null;
+  dateFrom: string;
+  dateTo: string;
+  weekdays: number[];
+  dailyStartLocal: string;
+  dailyEndLocal: string;
+  minimumNoticeMinutes: number;
+  priorityAt: string;
+  status: string;
+  suspensionReason: string | null;
+  version: number;
+  staffIds: string[];
+  offer?: {
+    id: string;
+    status: string;
+    offeredAt: string | null;
+    expiresAt: string | null;
+    terminalReason: string | null;
+    version: number;
+  } | null;
+}
+export interface LiveWindowOffer {
+  id: string;
+  tenantId: string;
+  status: string;
+  version: number;
+  startAt: string;
+  endAt: string;
+  expiresAt: string | null;
+  tenantName: string;
+  serviceName: string;
+  staffName: string;
+  timezone: string;
+  linkedBookingId: string | null;
+  requestStatus: string;
+}
 export interface Schedule {
   staff: Staff;
   rules: { effectiveFrom: string; weekly: Weekday[]; version: number }[];

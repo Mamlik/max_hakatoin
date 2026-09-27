@@ -19,6 +19,7 @@ import { canonical, hash, equalSecret } from "./auth.js";
 import { config } from "./config.js";
 import { audit } from "./http.js";
 import { bookingEvent, notify } from "./notifications.js";
+import { emitSlotReleased } from "./live-window.js";
 
 export async function voucherCheck(
   db: DB,
@@ -71,6 +72,7 @@ export async function createQuote(
   },
   work: boolean,
   existing?: Booking,
+  releaseCause: "ordinary" | "live_window" = "ordinary",
 ) {
   if (existing) {
     version(existing, input.expectedVersion);
@@ -269,6 +271,7 @@ export async function confirmQuote(
   },
   work: boolean,
   existing?: Booking,
+  releaseCause: "ordinary" | "live_window" = "ordinary",
 ) {
   const quote = required(
     await one<{ id: string; intent: QuoteIntent; expires_at: Date }>(
@@ -468,6 +471,14 @@ export async function confirmQuote(
     { overlapConfirmed: conflicts.length > 0 },
   );
   await bookingEvent(db, booking, existing ? "rescheduled" : "created");
+  if (existing)
+    await emitSlotReleased(
+      db,
+      existing,
+      booking.version,
+      releaseCause === "live_window" ? "live_window" : "rescheduled",
+      releaseCause !== "live_window",
+    );
   return booking;
 }
 export async function bookingRevision(
@@ -725,5 +736,7 @@ export async function outcome(
     { reason, target },
   );
   await bookingEvent(db, updated, correction ? "corrected" : target);
+  if (target === "cancelled" && !correction)
+    await emitSlotReleased(db, booking, updated.version, "cancelled", true);
   return updated;
 }

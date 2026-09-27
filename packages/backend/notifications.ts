@@ -15,6 +15,7 @@ export async function notify(
     membershipId?: string;
     dueAt?: Date;
     notAfter?: Date;
+    liveWindowOfferId?: string;
   } = {},
 ) {
   const n = (await one<{ id: string }>(
@@ -37,7 +38,7 @@ export async function notify(
   );
   const d = (await one<{ id: string }>(
     db,
-    "INSERT INTO deliveries(notification_id,user_id,tenant_id,booking_id,booking_version,category,membership_id,generation,due_at,not_after) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id",
+    "INSERT INTO deliveries(notification_id,user_id,tenant_id,booking_id,booking_version,category,membership_id,generation,due_at,not_after,live_window_offer_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id",
     [
       n.id,
       userId,
@@ -49,6 +50,7 @@ export async function notify(
       channel?.generation ?? 0,
       options.dueAt ?? new Date(),
       options.notAfter ?? new Date(Date.now() + 86400000),
+      options.liveWindowOfferId ?? null,
     ],
   ))!;
   await db.query("INSERT INTO outbox(delivery_id) VALUES($1)", [d.id]);

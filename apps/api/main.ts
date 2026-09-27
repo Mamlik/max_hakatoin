@@ -17,6 +17,7 @@ import { crmRoutes } from "../../packages/backend/crm.routes.js";
 import { partnerRoutes } from "../../packages/backend/partners.routes.js";
 import { loyaltyRoutes } from "../../packages/backend/loyalty.routes.js";
 import { analyticsRoutes } from "../../packages/backend/analytics.routes.js";
+import { liveWindowRoutes } from "../../packages/backend/live-window.routes.js";
 import { canonical, equalSecret, hash } from "../../packages/backend/auth.js";
 import { endpoints } from "../../packages/backend/http.js";
 import { z } from "zod";
@@ -130,6 +131,7 @@ export async function createApp() {
   partnerRoutes(server);
   analyticsRoutes(server);
   loyaltyRoutes(server);
+  liveWindowRoutes(server);
   server.get("/api/openapi.json", async () => {
     const paths: Record<string, Record<string, unknown>> = {};
     for (const e of endpoints) {

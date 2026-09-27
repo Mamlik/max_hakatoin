@@ -115,6 +115,49 @@ test("deep links open the salon storefront and the loyalty screen", async ({
   ).toBeVisible();
 });
 
+test("client and owner can open Live Window screens", async ({ page }) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Клиент Записаться, перенести визит, получить купон",
+    })
+    .click();
+  await page.getByRole("link", { name: "Живое окно", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Ожидаем удобное время" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Салоны", exact: true }).click();
+  await page.locator("a.salon-card").first().click();
+  await page.getByRole("link", { name: /Записаться/ }).first().click();
+  await page.getByLabel("Услуга").selectOption({ index: 1 });
+  await page
+    .getByRole("link", { name: "Сообщить, если освободится" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Сообщить об освободившемся времени" }),
+  ).toBeVisible();
+  await expect(page.getByText(/не удерживает время/i)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Владелец · Линия/ }).click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  await page.getByRole("link", { name: "Живое окно", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Живое окно" })).toBeVisible();
+  await expect(
+    page.getByText(/предложения отправляются автоматически/i),
+  ).toBeVisible();
+});
+
 // A service no master provides never yields a slot on any date, so both sides must say so:
 // the publish checklist only requires one covered service.
 test("a service nobody provides is flagged to the owner", async ({ page }) => {

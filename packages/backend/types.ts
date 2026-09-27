@@ -167,3 +167,60 @@ export interface QuoteIntent {
   expectedVersion?: number;
   removeVoucher?: boolean;
 }
+export interface WaitlistRequest {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  service_id: string;
+  linked_booking_id: string | null;
+  linked_booking_version: number | null;
+  date_from: string;
+  date_to: string;
+  weekdays: number[];
+  daily_start_local: string;
+  daily_end_local: string;
+  minimum_notice_minutes: number;
+  priority_at: Date;
+  eligibility_hash: string;
+  consent_version: string;
+  status: string;
+  suspension_reason: string | null;
+  version: number;
+  expires_at: Date;
+  created_at: Date;
+  updated_at: Date;
+  staff_ids?: string[];
+}
+export interface LiveWindow {
+  id: string;
+  tenant_id: string;
+  staff_id: string;
+  service_id: string;
+  source_event_key: string;
+  source_booking_id: string;
+  source_booking_version: number;
+  start_at: Date;
+  end_at: Date;
+  duration_snapshot: number;
+  timezone_snapshot: string;
+  status: string;
+  close_reason: string | null;
+  filled_booking_id: string | null;
+  version: number;
+}
+export interface LiveWindowOffer {
+  id: string;
+  tenant_id: string;
+  window_id: string;
+  request_id: string;
+  user_id: string;
+  request_version: number;
+  eligibility_hash: string;
+  sequence: number;
+  status: string;
+  offered_at: Date | null;
+  expires_at: Date | null;
+  terminal_reason: string | null;
+  booking_id: string | null;
+  version: number;
+}

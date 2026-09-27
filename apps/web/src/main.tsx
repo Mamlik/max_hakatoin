@@ -38,6 +38,7 @@ import {
 } from "./work";
 import { PartnersPage } from "./partners";
 import { LoyaltyPage, LoyaltySettingsPage } from "./loyalty";
+import { LiveWindowOfferPage, LiveWindowWorkPage, WaitlistForm, WaitlistPage } from "./live-window-ui";
 import "./style.css";
 
 function App() {
@@ -192,6 +193,7 @@ function App() {
     ["/me/loyalty", "gift", "Лояльность"],
     ["/me/offers", "gift", "Предложения"],
     ["/me/events", "bell", "События"],
+    ["/me/waitlist", "calendar", "Живое окно"],
     ["/me/profile", "user", "Профиль"],
   ];
   const work = [
@@ -202,6 +204,7 @@ function App() {
           ["catalog", "salons", "Услуги и мастера"],
           ["schedule", "calendar", "График"],
           ["analytics", "chart", "Статистика"],
+          ["live-window", "calendar", "Живое окно"],
         ]
       : []),
     ...(member?.role === "owner"
@@ -316,6 +319,9 @@ function App() {
               element={<BookingForm reschedule />}
             />
             <Route path="/me/events" element={<EventsPage />} />
+            <Route path="/me/waitlist" element={<WaitlistPage />} />
+            <Route path="/me/waitlist/new" element={<WaitlistForm />} />
+            <Route path="/me/live-window/offers/:id" element={<LiveWindowOfferPage />} />
             <Route path="/me/offers" element={<OffersPage />} />
             <Route path="/me/loyalty" element={<LoyaltyPage />} />
             <Route path="/work/:t/loyalty" element={<LoyaltySettingsPage />} />
@@ -340,6 +346,7 @@ function App() {
             <Route path="/work/:t/catalog" element={<CatalogPage />} />
             <Route path="/work/:t/schedule" element={<SchedulePage />} />
             <Route path="/work/:t/analytics" element={<AnalyticsPage />} />
+            <Route path="/work/:t/live-window" element={<LiveWindowWorkPage />} />
             <Route path="/work/:t/settings" element={<SettingsPage />} />
             <Route path="/work/:t/staff-access" element={<AccessPage />} />
             <Route path="/work/:t/partners" element={<PartnersPage />} />

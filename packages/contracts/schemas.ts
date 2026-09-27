@@ -98,6 +98,68 @@ export const book = z
     removeVoucher: z.boolean().optional(),
   })
   .strict();
+const localTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+export const waitlistRequest = z
+  .object({
+    tenantId: id,
+    serviceId: id,
+    staffIds: z.array(id).max(50).default([]),
+    linkedBookingId: id.nullable().optional(),
+    dateFrom: date,
+    dateTo: date,
+    weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
+    dailyStartLocal: localTime,
+    dailyEndLocal: localTime,
+    minimumNoticeMinutes: z.number().int().min(0).max(10080),
+    consentVersion: z.literal("live-window-v1"),
+    consentSource: z.literal("mini_app").default("mini_app"),
+  })
+  .strict();
+export const waitlistPatch = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    staffIds: z.array(id).max(50).optional(),
+    dateFrom: date.optional(),
+    dateTo: date.optional(),
+    weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7).optional(),
+    dailyStartLocal: localTime.optional(),
+    dailyEndLocal: localTime.optional(),
+    minimumNoticeMinutes: z.number().int().min(0).max(10080).optional(),
+  })
+  .strict();
+export const liveWindowSettings = z
+  .object({
+    expectedVersion: z.number().int().min(0),
+    enabled: z.boolean(),
+    paused: z.boolean(),
+    pauseReason: z.string().trim().max(500).nullable().optional(),
+    offerTtlMinutes: z.number().int().min(5).max(30),
+    minimumNoticeMinutes: z.number().int().min(0).max(10080),
+    quietStart: localTime,
+    quietEnd: localTime,
+  })
+  .strict();
+export const liveWindowClose = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    reason: z.string().trim().min(3).max(500),
+  })
+  .strict();
+export const offerAccept = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    confirmedTermsVersion: z.literal("booking-p0-v1"),
+    confirmOverlap: z.boolean().optional(),
+    overlapChallengeToken: z.string().max(500).nullable().optional(),
+    removeVoucher: z.boolean().optional(),
+  })
+  .strict();
+export const offerDecline = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    stopRequest: z.boolean().default(false),
+  })
+  .strict();
 export const campaignTerms = z
   .object({
     sourceServiceIds: z.array(id).min(1).max(100),
