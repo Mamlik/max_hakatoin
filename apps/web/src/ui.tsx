@@ -22,6 +22,50 @@ export const dayISO = (offset = 0) => {
   d.setDate(d.getDate() + offset);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+export const TIMEZONES = [
+  ["Europe/Kaliningrad", "МСК−1", "Калининград"],
+  ["Europe/Moscow", "МСК", "Москва"],
+  ["Europe/Samara", "МСК+1", "Самара"],
+  ["Asia/Yekaterinburg", "МСК+2", "Екатеринбург"],
+  ["Asia/Omsk", "МСК+3", "Омск"],
+  ["Asia/Krasnoyarsk", "МСК+4", "Красноярск"],
+  ["Asia/Irkutsk", "МСК+5", "Иркутск"],
+  ["Asia/Yakutsk", "МСК+6", "Якутск"],
+  ["Asia/Vladivostok", "МСК+7", "Владивосток"],
+  ["Asia/Magadan", "МСК+8", "Магадан"],
+  ["Asia/Kamchatka", "МСК+9", "Камчатка"],
+] as const;
+export const timezoneLabel = (zone: string) => {
+  const item = TIMEZONES.find(([value]) => value === zone);
+  return item ? `${item[1]} · ${item[2]}` : zone;
+};
+export function TimezonePicker({
+  defaultValue = "Europe/Moscow",
+}: {
+  defaultValue?: string;
+}) {
+  return (
+    <Field label="Часовой пояс" hint="Листайте по горизонтали и выберите свой регион.">
+      <div className="timezone-picker" role="radiogroup" aria-label="Часовой пояс">
+        {TIMEZONES.map(([value, offset, city]) => (
+          <label key={value}>
+            <input
+              type="radio"
+              name="timezone"
+              value={value}
+              defaultChecked={value === defaultValue}
+              required
+            />
+            <span>
+              <strong>{offset}</strong>
+              <small>{city}</small>
+            </span>
+          </label>
+        ))}
+      </div>
+    </Field>
+  );
+}
 export const labels: Record<string, string> = {
   confirmed: "Подтверждена",
   completed: "Завершён",
@@ -113,6 +157,7 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <path d="M10 4H4v16h6m4-12 4 4-4 4m-5-4h12" />
       </>
     ),
+    close: <path d="M6 6l12 12M18 6 6 18" />,
     search: (
       <>
         <circle cx="10" cy="10" r="6" />

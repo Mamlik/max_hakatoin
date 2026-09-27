@@ -30,7 +30,7 @@ export async function createApp() {
     // X-Forwarded-For. Without this every visitor shares one rate-limit bucket.
     // Trust exactly one hop: the address Caddy itself observed. Anything a client
     // puts in the header sits further left and is ignored, so the limit stands.
-    trustProxy: 1,
+    trustProxy: (_address: string, hop: number) => hop === 0,
     logger: {
       level: "info",
       redact: ["req.headers.authorization", "req.headers.x-max-bot-api-secret"],

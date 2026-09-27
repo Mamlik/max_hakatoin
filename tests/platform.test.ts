@@ -127,6 +127,21 @@ beforeAll(async () => {
         "utf8",
       ),
     );
+  if (
+    !(await one(
+      pool,
+      "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='services' AND column_name='cover_media_id'",
+    ))
+  )
+    await pool.query(
+      await readFile(
+        new URL(
+          "../packages/db/migrations/003_catalog_media.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
   app = await createApp();
 });
 beforeEach(async () => {

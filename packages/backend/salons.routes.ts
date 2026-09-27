@@ -40,6 +40,11 @@ import {
 } from "./scheduling.js";
 
 const manage = ["owner", "admin"] as ("owner" | "admin")[];
+const catalogMedia = ["owner", "admin", "master"] as (
+  | "owner"
+  | "admin"
+  | "master"
+)[];
 export async function tenantById(db: DB, id: string) {
   return required(
     await one<Tenant>(db, "SELECT * FROM tenants WHERE id=$1", [id]),
@@ -107,6 +112,29 @@ async function publishStyle(db: DB, tenant: Tenant) {
       }),
     ],
   );
+}
+async function publishCatalogMedia(
+  db: DB,
+  tenantId: string,
+  mediaId: string | null | undefined,
+  purpose: "staff" | "service",
+) {
+  if (!mediaId) return;
+  const media = required(
+    await one<{ file_key: string }>(
+      db,
+      "SELECT file_key FROM media_assets WHERE id=$1 AND tenant_id=$2 AND purpose=$3",
+      [mediaId, tenantId, purpose],
+    ),
+  );
+  await mkdir(path.join(config.MEDIA_ROOT, "published"), { recursive: true });
+  await copyFile(
+    path.join(config.MEDIA_ROOT, "private", media.file_key),
+    path.join(config.MEDIA_ROOT, "published", media.file_key),
+  );
+  await db.query("UPDATE media_assets SET published=true WHERE id=$1", [
+    mediaId,
+  ]);
 }
 async function publicSalon(db: DB, tenant: Tenant) {
   const assets = await rows(
@@ -179,7 +207,7 @@ export function salonRoutes(app: FastifyInstance) {
         ),
         services: await rows(
           db,
-          "SELECT id,category_id,name,description,duration_min,price_minor,version FROM services WHERE tenant_id=$1 AND active ORDER BY name",
+          "SELECT id,category_id,name,description,duration_min,price_minor,cover_media_id,version FROM services WHERE tenant_id=$1 AND active ORDER BY name",
           [t.id],
         ),
         staff: await rows(
@@ -448,7 +476,7 @@ export function salonRoutes(app: FastifyInstance) {
     "POST",
     "/api/v1/work/:t/media",
     {
-      roles: manage,
+      roles: catalogMedia,
       noIdempotency: true,
       description: "Загрузка и безопасное перекодирование изображения",
     },
@@ -459,7 +487,7 @@ export function salonRoutes(app: FastifyInstance) {
       if (!file) fail(422, "VALIDATION_ERROR", "Выберите изображение");
       const purposeField = file.fields.purpose;
       const purpose = z
-        .enum(["logo", "cover", "staff"])
+        .enum(["logo", "cover", "staff", "service"])
         .parse(
           purposeField &&
             !Array.isArray(purposeField) &&
@@ -467,11 +495,15 @@ export function salonRoutes(app: FastifyInstance) {
             ? purposeField.value
             : undefined,
         );
-      if (member.role === "admin" && purpose !== "staff")
+      if (
+        (member.role === "admin" &&
+          !["staff", "service"].includes(purpose)) ||
+        (member.role === "master" && purpose !== "staff")
+      )
         fail(
           403,
           "FORBIDDEN",
-          "Администратор может загружать только фото мастера",
+          "Для этой роли доступна только загрузка изображений каталога",
         );
       const bytes = await file.toBuffer();
       let output: Buffer;
@@ -484,6 +516,7 @@ export function salonRoutes(app: FastifyInstance) {
           logo: [512, 512],
           cover: [1600, 900],
           staff: [800, 800],
+          service: [1200, 800],
         }[purpose]!;
         output = await image
           .rotate()
@@ -520,7 +553,7 @@ export function salonRoutes(app: FastifyInstance) {
     "GET",
     "/api/v1/work/:t/media/:id",
     {
-      roles: manage,
+      roles: catalogMedia,
       raw: true,
       description: "Защищённый просмотр чернового изображения",
     },
@@ -532,7 +565,11 @@ export function salonRoutes(app: FastifyInstance) {
           [p.id, p.t],
         ),
       );
-      if (member.role === "admin" && media.purpose !== "staff")
+      if (
+        (member.role === "admin" &&
+          !["staff", "service"].includes(media.purpose)) ||
+        (member.role === "master" && media.purpose !== "staff")
+      )
         fail(403, "FORBIDDEN", "Недостаточно прав");
       reply
         .type("image/webp")
@@ -575,6 +612,50 @@ export function salonRoutes(app: FastifyInstance) {
 }
 
 function catalogRoutes(app: FastifyInstance) {
+  route(
+    app,
+    "GET",
+    "/api/v1/work/:t/my-staff-profile",
+    { roles: ["master"], description: "Профиль текущего мастера" },
+    async ({ db, member, p }) =>
+      required(
+        await one<Staff>(
+          db,
+          "SELECT * FROM staff WHERE tenant_id=$1 AND membership_id=$2 AND active",
+          [p.t, member.id],
+        ),
+      ),
+  );
+  route(
+    app,
+    "PATCH",
+    "/api/v1/work/:t/my-staff-profile",
+    {
+      roles: ["master"],
+      schema: expected
+        .extend({ photoMediaId: id.nullable() })
+        .strict(),
+      description: "Обновить фотографию текущего мастера",
+    },
+    async ({ db, actor, member, p, b }) => {
+      const current = required(
+        await one<Staff>(
+          db,
+          "SELECT * FROM staff WHERE tenant_id=$1 AND membership_id=$2 AND active",
+          [p.t, member.id],
+        ),
+      );
+      version(current, b.expectedVersion);
+      await publishCatalogMedia(db, p.t!, b.photoMediaId, "staff");
+      const updated = await one<Staff>(
+        db,
+        "UPDATE staff SET photo_media_id=$2,version=version+1 WHERE id=$1 RETURNING *",
+        [current.id, b.photoMediaId],
+      );
+      await audit(db, p.t!, actor.id, "catalog.staff_photo_updated", current.id);
+      return updated;
+    },
+  );
   route(
     app,
     "GET",
@@ -665,7 +746,7 @@ function catalogRoutes(app: FastifyInstance) {
         async ({ db, actor, p, b }) => {
           const result = (await one<Service>(
             db,
-            "INSERT INTO services(tenant_id,name,description,category_id,duration_min,price_minor,active) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",
+            "INSERT INTO services(tenant_id,name,description,category_id,duration_min,price_minor,cover_media_id,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
             [
               p.t,
               b.name,
@@ -673,9 +754,11 @@ function catalogRoutes(app: FastifyInstance) {
               b.categoryId ?? null,
               b.durationMin,
               b.priceMinor,
+              b.coverMediaId ?? null,
               b.active,
             ],
           ))!;
+          await publishCatalogMedia(db, p.t!, b.coverMediaId, "service");
           await audit(db, p.t!, actor.id, "catalog.service_created", result.id);
           return result;
         },
@@ -702,10 +785,11 @@ function catalogRoutes(app: FastifyInstance) {
             ),
             b.expectedVersion,
           );
+          await publishCatalogMedia(db, p.t!, b.coverMediaId, "service");
           await audit(db, p.t!, actor.id, "catalog.service_updated", p.id!);
           return one(
             db,
-            "UPDATE services SET name=$2,description=$3,category_id=$4,duration_min=$5,price_minor=$6,active=$7,version=version+1 WHERE id=$1 RETURNING *",
+            "UPDATE services SET name=$2,description=$3,category_id=$4,duration_min=$5,price_minor=$6,cover_media_id=$7,active=$8,version=version+1 WHERE id=$1 RETURNING *",
             [
               p.id,
               b.name,
@@ -713,6 +797,7 @@ function catalogRoutes(app: FastifyInstance) {
               b.categoryId ?? null,
               b.durationMin,
               b.priceMinor,
+              b.coverMediaId ?? null,
               b.active,
             ],
           );
@@ -727,9 +812,10 @@ function catalogRoutes(app: FastifyInstance) {
         async ({ db, actor, p, b }) => {
           const result = (await one<Staff>(
             db,
-            "INSERT INTO staff(tenant_id,name,description,active) VALUES($1,$2,$3,$4) RETURNING *",
-            [p.t, b.name, b.description, b.active],
+            "INSERT INTO staff(tenant_id,name,description,photo_media_id,active) VALUES($1,$2,$3,$4,$5) RETURNING *",
+            [p.t, b.name, b.description, b.photoMediaId ?? null, b.active],
           ))!;
+          await publishCatalogMedia(db, p.t!, b.photoMediaId, "staff");
           await audit(db, p.t!, actor.id, "catalog.staff_created", result.id);
           return result;
         },
@@ -741,10 +827,7 @@ function catalogRoutes(app: FastifyInstance) {
         {
           roles: manage,
           schema: staff
-            .extend({
-              expectedVersion: z.number().int().positive(),
-              photoMediaId: id.nullable().optional(),
-            })
+            .extend({ expectedVersion: z.number().int().positive() })
             .strict(),
           description: "Изменение мастера",
         },
@@ -759,14 +842,7 @@ function catalogRoutes(app: FastifyInstance) {
             ),
             b.expectedVersion,
           );
-          if (b.photoMediaId)
-            required(
-              await one(
-                db,
-                "SELECT id FROM media_assets WHERE id=$1 AND tenant_id=$2 AND purpose='staff'",
-                [b.photoMediaId, p.t],
-              ),
-            );
+          await publishCatalogMedia(db, p.t!, b.photoMediaId, "staff");
           await audit(db, p.t!, actor.id, "catalog.staff_updated", p.id!);
           return one(
             db,

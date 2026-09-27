@@ -56,9 +56,15 @@ function App() {
   React.useEffect(() => {
     const button = window.WebApp?.BackButton;
     if (!button) return;
-    const back = () => navigate(-1);
-    if (location.pathname !== "/") button.show();
-    else button.hide();
+    const back = () => {
+      const historyIndex = Number(window.history.state?.idx ?? 0);
+      if (historyIndex > 0) navigate(-1);
+      else window.WebApp?.close?.();
+    };
+    // Keep MAX's native back control visible inside the app. At the root of the
+    // WebView history it becomes the expected Android exit affordance.
+    if (location.pathname === "/") button.hide();
+    else button.show();
     button.onClick(back);
     return () => button.offClick(back);
   }, [location.pathname]);
@@ -269,10 +275,12 @@ function App() {
             </div>
             <button
               className="icon-button"
-              aria-label="Выйти"
-              onClick={auth.logout}
+              aria-label={auth.demo ? "Выйти" : "Закрыть приложение"}
+              onClick={
+                auth.demo ? auth.logout : () => window.WebApp?.close?.()
+              }
             >
-              <Icon name="logout" />
+              <Icon name={auth.demo ? "logout" : "close"} />
             </button>
           </div>
         </div>
@@ -350,7 +358,7 @@ function App() {
         <footer>
           Рядом · салоны в MAX{" "}
           <span>
-            Время на экранах — московское, графики — в часовом поясе салона.
+            Время визитов и графиков — в часовом поясе выбранного салона.
           </span>
         </footer>
       </div>

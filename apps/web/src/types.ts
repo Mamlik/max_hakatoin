@@ -57,6 +57,7 @@ export interface Service {
   description: string;
   durationMin: number;
   priceMinor: number;
+  coverMediaId: string | null;
   active: boolean;
   version: number;
 }
@@ -68,6 +69,7 @@ export interface Staff {
   version: number;
   serviceIds: string[];
   membershipId: string | null;
+  photoMediaId: string | null;
 }
 export interface Category {
   id: string;

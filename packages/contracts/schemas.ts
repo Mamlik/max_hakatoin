@@ -34,6 +34,7 @@ export const service = z
     categoryId: id.nullable().optional(),
     durationMin: z.number().int().min(5).max(480),
     priceMinor: z.number().int().min(0).max(100000000),
+    coverMediaId: id.nullable().optional(),
     active: z.boolean().default(true),
   })
   .strict();
@@ -41,6 +42,7 @@ export const staff = z
   .object({
     name: text,
     description: z.string().max(2000).default(""),
+    photoMediaId: id.nullable().optional(),
     active: z.boolean().default(true),
   })
   .strict();

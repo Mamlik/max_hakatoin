@@ -49,6 +49,7 @@ export interface Service {
   version: number;
   active: boolean;
   category_id: string | null;
+  cover_media_id: string | null;
 }
 export interface Staff {
   id: string;
@@ -58,6 +59,7 @@ export interface Staff {
   active: boolean;
   version: number;
   membership_id: string | null;
+  photo_media_id: string | null;
   service_ids?: string[];
 }
 export interface Customer {

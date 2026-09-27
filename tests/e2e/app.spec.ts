@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
 
+const tinyPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
+
 test("client sees loyalty progress and can calculate an appointment", async ({
   page,
 }) => {
@@ -152,4 +157,156 @@ test("a service nobody provides is flagged to the owner", async ({ page }) => {
     await form.getByRole("button", { name: "Сохранить" }).click();
   }
   await expect(orphan.getByText("Никто не оказывает")).toBeVisible();
+});
+
+test("salon media and friendly timezones reach the published storefront", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Владелец · Линия Управление студией волос и партнёрствами",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+
+  const timezone = page.getByRole("radiogroup", { name: "Часовой пояс" });
+  await expect(timezone.getByText("МСК+2", { exact: true })).toBeVisible();
+
+  const files = page.locator('input[type="file"]');
+  await files.nth(0).setInputFiles({
+    name: "logo.png",
+    mimeType: "image/png",
+    buffer: tinyPng,
+  });
+  await expect(page.getByText("Логотип выбран", { exact: true })).toBeVisible();
+  await files.nth(1).setInputFiles({
+    name: "cover.png",
+    mimeType: "image/png",
+    buffer: tinyPng,
+  });
+  await expect(page.getByText("Обложка выбрана", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Сохранить черновик" }).click();
+  await expect(page.getByText("Черновик сохранён", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Опубликовать сохранённое оформление" })
+    .click();
+  await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Услуги и мастера", exact: true }).click();
+  const service = page.locator(".service-row").filter({ hasText: "Стрижка и укладка" });
+  await service.getByRole("button", { name: "Изменить" }).click();
+  let dialog = page.getByRole("dialog", { name: "Изменить услугу" });
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: "service.png",
+    mimeType: "image/png",
+    buffer: tinyPng,
+  });
+  await dialog.getByRole("button", { name: "Сохранить" }).click();
+  await expect(service.locator(".service-cover")).toBeVisible();
+
+  const master = page.locator(".staff-editor").filter({ hasText: "Александр" });
+  await master.getByRole("button", { name: "Изменить профиль" }).click();
+  dialog = page.getByRole("dialog", { name: "Изменить мастера" });
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: "master.png",
+    mimeType: "image/png",
+    buffer: tinyPng,
+  });
+  await dialog.getByRole("button", { name: "Сохранить" }).click();
+  await expect(master.locator(".staff-avatar img")).toBeVisible();
+
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page.getByRole("link", { name: "Открыть витрину" }).click();
+  await expect(page.getByAltText("Обложка салона")).toBeVisible();
+  await expect(page.getByAltText("Логотип")).toBeVisible();
+  await expect(page.getByAltText("Обложка услуги «Стрижка и укладка»")).toBeVisible();
+  await expect(page.getByAltText("Фото Александр")).toBeVisible();
+  await expect(page.getByText(/Часовой пояс: МСК · Москва/)).toBeVisible();
+  await page.screenshot({
+    path: `test-results/catalog-media-${test.info().project.name}.png`,
+    fullPage: true,
+  });
+});
+
+test("MAX back closes the Android mini-app at the root screen", async ({
+  page,
+  request,
+}) => {
+  const issued = await request.post("/api/v1/demo/identity", {
+    data: { persona: "client" },
+  });
+  expect(issued.ok(), await issued.text()).toBeTruthy();
+  const { data } = await issued.json();
+  await page.addInitScript((initData: string) => {
+    const bridge = { closed: 0, shown: false };
+    let onBack: (() => void) | undefined;
+    Object.assign(window, {
+      __bridge: bridge,
+      __pressMaxBack: () => onBack?.(),
+    });
+    Object.defineProperty(window, "WebApp", {
+      configurable: false,
+      writable: false,
+      value: {
+        initData,
+        platform: "android",
+        ready() {},
+        expand() {},
+        close() {
+          bridge.closed += 1;
+        },
+        BackButton: {
+          show() {
+            bridge.shown = true;
+          },
+          hide() {
+            bridge.shown = false;
+          },
+          onClick(callback: () => void) {
+            onBack = callback;
+          },
+          offClick(callback: () => void) {
+            if (onBack === callback) onBack = undefined;
+          },
+        },
+      },
+    });
+  }, data.initData);
+
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/me\/bookings$/);
+  await expect.poll(() => page.evaluate(() => (window as any).__bridge.shown)).toBe(true);
+  await page.evaluate(() => (window as any).__pressMaxBack());
+  await expect.poll(() => page.evaluate(() => (window as any).__bridge.closed)).toBe(1);
+});
+
+test("master can replace their own storefront photo", async ({ page }) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Мастер Только свои назначения и исходы визитов",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  const card = page.locator(".master-profile-card");
+  await expect(card.getByRole("heading", { name: "София" })).toBeVisible();
+  await card.locator('input[type="file"]').setInputFiles({
+    name: "self-photo.png",
+    mimeType: "image/png",
+    buffer: tinyPng,
+  });
+  await expect(card.getByText("Фотография профиля обновлена", { exact: true })).toBeVisible();
+  await expect(card.locator(".staff-avatar img")).toBeVisible();
 });
