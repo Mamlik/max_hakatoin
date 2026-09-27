@@ -86,6 +86,14 @@ export function BookingCard({
           мин
         </p>
         <Badge status={b.status} />
+        {!work && b.reviewStatus === "active" && b.reviewRating && (
+          <span className="booking-rating" aria-label={`Оценка ${b.reviewRating} из 5`}>
+            ★ {b.reviewRating}/5
+          </span>
+        )}
+        {!work && b.canReview && !b.reviewRating && (
+          <span className="booking-rating pending">Оценить мастера</span>
+        )}
       </div>
       <div className="booking-card-end">
         {b.totalMinor !== undefined && <strong>{money(b.totalMinor)}</strong>}
@@ -497,6 +505,11 @@ export function StorefrontView({
                   )}
                 </div>
                 <h3>{st.name}</h3>
+                {st.ratingAverage != null && st.ratingCount != null && (
+                  <div className="staff-rating" aria-label={`Рейтинг ${st.ratingAverage} из 5, ${st.ratingCount} оценок`}>
+                    ★ {st.ratingAverage.toLocaleString("ru-RU")} · {plural(st.ratingCount, "оценка", "оценки", "оценок")}
+                  </div>
+                )}
                 <p>{st.description}</p>
               </div>
             ))}

@@ -79,6 +79,11 @@ function MasterPhotoCard({ tenantId }: { tenantId: string }) {
           <div>
             <h3>{profile.data.name}</h3>
             <p>Эта фотография отображается клиентам в витрине салона.</p>
+            <div className="staff-rating">
+              {profile.data.ratingCount
+                ? `★ ${profile.data.ratingAverage?.toLocaleString("ru-RU")} · ${plural(profile.data.ratingCount, "оценка", "оценки", "оценок")}`
+                : "Пока нет оценок"}
+            </div>
           </div>
           <FilePick
             accept="image/jpeg,image/png,image/webp"
@@ -711,6 +716,11 @@ export function CatalogPage() {
               </div>
               <h3>{s.name}</h3>
               {!s.active && <Badge status="archived" />}
+              <div className="staff-rating">
+                {s.ratingCount
+                  ? `★ ${s.ratingAverage?.toLocaleString("ru-RU")} · ${plural(s.ratingCount, "оценка", "оценки", "оценок")}`
+                  : "Пока нет оценок"}
+              </div>
               <p>{s.description}</p>
               <small>{plural(s.serviceIds.length, "услуга", "услуги", "услуг")}</small>
               <div className="stack">

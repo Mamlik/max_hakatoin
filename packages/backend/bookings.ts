@@ -612,6 +612,9 @@ export async function outcome(
   correction = false,
   restorePreviousVoucher = false,
 ) {
+  // Serializes outcome changes with review create/update even if command routing
+  // changes later and the process-wide advisory lock is narrowed.
+  await db.query("SELECT id FROM bookings WHERE id=$1 FOR UPDATE", [booking.id]);
   if (correction) {
     if (
       !["completed", "no_show"].includes(booking.status) ||
@@ -724,6 +727,23 @@ export async function outcome(
     "UPDATE bookings SET status=$2,version=version+1,outcome_at=now() WHERE id=$1 RETURNING *",
     [booking.id, target],
   ))!;
+  if (correction && target !== "completed") {
+    const review = await one<{ id: string; staff_id: string }>(
+      db,
+      `UPDATE visit_reviews
+       SET status='invalidated',invalidated_reason='booking_outcome_corrected',
+           invalidated_at=now(),updated_at=now(),version=version+1
+       WHERE booking_id=$1 AND status='active'
+       RETURNING id,staff_id`,
+      [booking.id],
+    );
+    if (review)
+      await audit(db, booking.tenant_id, actor.id, "review.invalidated", review.id, {
+        bookingId: booking.id,
+        staffId: review.staff_id,
+        reason: "booking_outcome_corrected",
+      });
+  }
   if (target === "completed" && !correction)
     await issueVouchers(db, updated, actor.id);
   await bookingRevision(db, updated, actor.id, reason ?? null);

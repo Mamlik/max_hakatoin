@@ -212,7 +212,19 @@ export function salonRoutes(app: FastifyInstance) {
         ),
         staff: await rows(
           db,
-          "SELECT s.id,s.name,s.description,s.photo_media_id,COALESCE(array_agg(ss.service_id) FILTER(WHERE ss.service_id IS NOT NULL),'{}') service_ids FROM staff s LEFT JOIN staff_services ss ON ss.staff_id=s.id WHERE s.tenant_id=$1 AND s.active GROUP BY s.id ORDER BY s.name",
+          `SELECT s.id,s.name,s.description,s.photo_media_id,
+                  COALESCE(array_agg(ss.service_id) FILTER(WHERE ss.service_id IS NOT NULL),'{}') service_ids,
+                  CASE WHEN rr.rating_count>=3 THEN rr.rating_average ELSE NULL END rating_average,
+                  CASE WHEN rr.rating_count>=3 THEN rr.rating_count ELSE NULL END rating_count
+           FROM staff s
+           LEFT JOIN staff_services ss ON ss.staff_id=s.id
+           LEFT JOIN LATERAL (
+             SELECT round(avg(vr.rating)::numeric,1)::float8 rating_average,count(*)::int rating_count
+             FROM visit_reviews vr
+             WHERE vr.tenant_id=s.tenant_id AND vr.staff_id=s.id AND vr.status='active'
+           ) rr ON true
+           WHERE s.tenant_id=$1 AND s.active
+           GROUP BY s.id,rr.rating_average,rr.rating_count ORDER BY s.name`,
           [t.id],
         ),
       };
@@ -621,7 +633,14 @@ function catalogRoutes(app: FastifyInstance) {
       required(
         await one<Staff>(
           db,
-          "SELECT * FROM staff WHERE tenant_id=$1 AND membership_id=$2 AND active",
+          `SELECT s.*,rr.rating_average,COALESCE(rr.rating_count,0) rating_count
+           FROM staff s
+           LEFT JOIN LATERAL (
+             SELECT round(avg(vr.rating)::numeric,1)::float8 rating_average,count(*)::int rating_count
+             FROM visit_reviews vr
+             WHERE vr.tenant_id=s.tenant_id AND vr.staff_id=s.id AND vr.status='active'
+           ) rr ON true
+           WHERE s.tenant_id=$1 AND s.membership_id=$2 AND s.active`,
           [p.t, member.id],
         ),
       ),
@@ -731,7 +750,18 @@ function catalogRoutes(app: FastifyInstance) {
           await rows(
             db,
             entity === "staff"
-              ? "SELECT s.*,COALESCE(array_agg(ss.service_id) FILTER(WHERE ss.service_id IS NOT NULL),'{}') service_ids FROM staff s LEFT JOIN staff_services ss ON ss.staff_id=s.id WHERE s.tenant_id=$1 GROUP BY s.id ORDER BY s.name"
+              ? `SELECT s.*,
+                        COALESCE(array_agg(ss.service_id) FILTER(WHERE ss.service_id IS NOT NULL),'{}') service_ids,
+                        rr.rating_average,COALESCE(rr.rating_count,0) rating_count
+                 FROM staff s
+                 LEFT JOIN staff_services ss ON ss.staff_id=s.id
+                 LEFT JOIN LATERAL (
+                   SELECT round(avg(vr.rating)::numeric,1)::float8 rating_average,count(*)::int rating_count
+                   FROM visit_reviews vr
+                   WHERE vr.tenant_id=s.tenant_id AND vr.staff_id=s.id AND vr.status='active'
+                 ) rr ON true
+                 WHERE s.tenant_id=$1
+                 GROUP BY s.id,rr.rating_average,rr.rating_count ORDER BY s.name`
               : "SELECT * FROM services WHERE tenant_id=$1 ORDER BY name",
             [p.t],
           ),

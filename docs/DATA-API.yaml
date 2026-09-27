@@ -1176,6 +1176,22 @@
       "description": "Агрегированные метрики Live Window",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/bookings/:b/review",
+      "role": "user",
+      "description": "Оценить мастера после завершённого визита",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me/bookings/:b/review",
+      "role": "user",
+      "description": "Изменить собственную оценку завершённого визита",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
     }
   ]
 }

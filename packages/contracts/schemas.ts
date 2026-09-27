@@ -98,6 +98,12 @@ export const book = z
     removeVoucher: z.boolean().optional(),
   })
   .strict();
+export const visitReviewCreate = z
+  .object({ rating: z.number().int().min(1).max(5) })
+  .strict();
+export const visitReviewUpdate = visitReviewCreate
+  .extend({ expectedVersion: z.number().int().positive() })
+  .strict();
 const localTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 export const waitlistRequest = z
   .object({

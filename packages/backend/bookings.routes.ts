@@ -5,10 +5,11 @@ import { route, list, page, type Context } from "./http.js";
 import { one, rows, type DB } from "../db/db.js";
 import { required, fail, version } from "./errors.js";
 import { quote, book, command, expected } from "../contracts/schemas.js";
-import type { Booking, Membership, Actor } from "./types.js";
+import type { Booking, Membership, Actor, VisitReview } from "./types.js";
 import { tenantById } from "./salons.routes.js";
 import { createQuote, confirmQuote, outcome } from "./bookings.js";
 import { slots } from "./scheduling.js";
+import { reviewDTO } from "./reviews.routes.js";
 
 const bookingSelect =
   "SELECT b.*, c.display_name customer_name,s.name staff_name,t.name tenant_name,t.public_code FROM bookings b JOIN customers c ON c.id=b.customer_id JOIN staff s ON s.id=b.staff_id JOIN tenants t ON t.id=b.tenant_id";
@@ -139,8 +140,26 @@ export function bookingRoutes(app: FastifyInstance) {
           offset,
         ],
       );
+      const reviews = result.length
+        ? await rows<VisitReview>(
+            db,
+            "SELECT * FROM visit_reviews WHERE user_id=$1 AND booking_id=ANY($2::uuid[])",
+            [actor.id, result.map((booking) => booking.id)],
+          )
+        : [];
+      const reviewByBooking = new Map(
+        reviews.map((review) => [review.booking_id, review]),
+      );
       return {
-        items: result.slice(0, limit).map((b) => bookingDTO(b)),
+        items: result.slice(0, limit).map((b) => {
+          const review = reviewByBooking.get(b.id);
+          return {
+            ...bookingDTO(b),
+            reviewRating: review?.rating ?? null,
+            reviewStatus: review?.status ?? null,
+            canReview: b.status === "completed",
+          };
+        }),
         nextCursor: result.length > limit ? String(offset + limit) : null,
       };
     },
@@ -208,8 +227,25 @@ export function bookingRoutes(app: FastifyInstance) {
           member,
         );
         const result = bookingDTO(b, work ? member : undefined);
+        const review = !work
+          ? await one<VisitReview>(
+              db,
+              "SELECT * FROM visit_reviews WHERE booking_id=$1 AND user_id=$2",
+              [b.id, actor.id],
+            )
+          : undefined;
         return {
           ...result,
+          ...(!work
+            ? {
+                review: review ? reviewDTO(review) : null,
+                reviewEligibility: {
+                  eligible: b.status === "completed",
+                  reason:
+                    b.status === "completed" ? null : "booking_not_completed",
+                },
+              }
+            : {}),
           history:
             member?.role === "master"
               ? []

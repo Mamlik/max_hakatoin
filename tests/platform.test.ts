@@ -158,6 +158,18 @@ beforeAll(async () => {
         "utf8",
       ),
     );
+  if (
+    !(await one(
+      pool,
+      "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='visit_reviews'",
+    ))
+  )
+    await pool.query(
+      await readFile(
+        new URL("../packages/db/migrations/005_visit_reviews.sql", import.meta.url),
+        "utf8",
+      ),
+    );
   app = await createApp();
 });
 beforeEach(async () => {
@@ -995,6 +1007,353 @@ describe("loyalty: paid visits earn an additional free visit", () => {
         )
       ).status,
     ).toBe(201);
+  });
+});
+
+describe("post-visit master reviews", () => {
+  const completed = f("booking-a-0");
+
+  async function completedBooking(maxId: string, daysAgo: number) {
+    const token = await login(maxId);
+    const user = (await one<{ id: string }>(
+      pool,
+      "SELECT id FROM users WHERE max_user_id=$1",
+      [maxId],
+    ))!;
+    const customerId = randomUUID();
+    const bookingId = randomUUID();
+    const start = DateTime.now()
+      .setZone("Europe/Moscow")
+      .minus({ days: daysAgo })
+      .set({ hour: 16, minute: 0, second: 0, millisecond: 0 });
+    await pool.query(
+      "INSERT INTO customers(id,tenant_id,user_id,display_name) VALUES($1,$2,$3,$4)",
+      [customerId, f("salon-a"), user.id, `Клиент ${maxId}`],
+    );
+    await pool.query(
+      `INSERT INTO bookings(
+         id,tenant_id,customer_id,user_id,staff_id,service_id,start_at,end_at,
+         timezone_snapshot,status,source,service_name_snapshot,duration_snapshot,
+         price_minor_snapshot,created_by
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'Europe/Moscow','completed','self',$9,60,250000,$4)`,
+      [
+        bookingId,
+        f("salon-a"),
+        customerId,
+        user.id,
+        f("staff-a-0"),
+        f("service-a-0"),
+        start.toJSDate(),
+        start.plus({ hours: 1 }).toJSDate(),
+        "Стрижка и укладка",
+      ],
+    );
+    return { token, userId: user.id, customerId, bookingId };
+  }
+
+  it("creates, reads and updates one owned completed review idempotently", async () => {
+    const client = await login();
+    const key = randomUUID();
+    const created = await req<{
+      id: string;
+      rating: number;
+      version: number;
+      staffNameSnapshot: string;
+    }>("POST", `/api/v1/me/bookings/${completed}/review`, client, { rating: 5 }, key);
+    expect(created.status, JSON.stringify(created.error)).toBe(201);
+    expect(created.data).toMatchObject({
+      rating: 5,
+      version: 1,
+      staffNameSnapshot: "София",
+    });
+    expect(
+      await req("POST", `/api/v1/me/bookings/${completed}/review`, client, { rating: 5 }, key),
+    ).toMatchObject({ status: 201, data: { id: created.data.id, version: 1 } });
+    expect(
+      (
+        await req(
+          "POST",
+          `/api/v1/me/bookings/${completed}/review`,
+          client,
+          { rating: 4 },
+          key,
+        )
+      ).error.code,
+    ).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect(
+      (
+        await req("POST", `/api/v1/me/bookings/${completed}/review`, client, {
+          rating: 5,
+        })
+      ).error.code,
+    ).toBe("REVIEW_ALREADY_EXISTS");
+
+    const detail = await req<{
+      review: { rating: number; status: string; version: number };
+      reviewEligibility: { eligible: boolean };
+    }>("GET", `/api/v1/me/bookings/${completed}`, client);
+    expect(detail.data).toMatchObject({
+      review: { rating: 5, status: "active", version: 1 },
+      reviewEligibility: { eligible: true },
+    });
+    const updated = await req<{ rating: number; version: number }>(
+      "PATCH",
+      `/api/v1/me/bookings/${completed}/review`,
+      client,
+      { rating: 4, expectedVersion: 1 },
+    );
+    expect(updated).toMatchObject({ status: 200, data: { rating: 4, version: 2 } });
+    expect(
+      (
+        await req("PATCH", `/api/v1/me/bookings/${completed}/review`, client, {
+          rating: 3,
+          expectedVersion: 1,
+        })
+      ).error.code,
+    ).toBe("VERSION_CONFLICT");
+    for (const rating of [0, 6, 2.5, "5"])
+      expect(
+        (
+          await req("POST", `/api/v1/me/bookings/${f("booking-a-1")}/review`, client, {
+            rating,
+          })
+        ).status,
+      ).toBe(422);
+    const stranger = await login("900041");
+    expect(
+      (await req("POST", `/api/v1/me/bookings/${completed}/review`, stranger, { rating: 1 }))
+        .status,
+    ).toBe(404);
+    for (const booking of ["booking-a-1", "booking-a-2", "booking-a-3"])
+      expect(
+        (
+          await req("POST", `/api/v1/me/bookings/${f(booking)}/review`, client, {
+            rating: 5,
+          })
+        ).error.code,
+      ).toBe("BOOKING_NOT_COMPLETED");
+    expect(
+      (await req("DELETE", `/api/v1/me/bookings/${completed}/review`, client, {})).status,
+    ).toBe(404);
+    const stoppedBotBooking = await completedBooking("900042", 20);
+    await pool.query("UPDATE bot_channels SET state='stopped' WHERE user_id=$1", [
+      stoppedBotBooking.userId,
+    ]);
+    expect(
+      (
+        await req(
+          "POST",
+          `/api/v1/me/bookings/${stoppedBotBooking.bookingId}/review`,
+          stoppedBotBooking.token,
+          { rating: 5 },
+        )
+      ).status,
+    ).toBe(201);
+  });
+
+  it("allows exactly one of twenty concurrent first reviews", async () => {
+    const client = await login();
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        req("POST", `/api/v1/me/bookings/${completed}/review`, client, {
+          rating: 5,
+        }),
+      ),
+    );
+    expect(results.filter((result) => result.status === 201)).toHaveLength(1);
+    expect(results.filter((result) => result.error?.code === "REVIEW_ALREADY_EXISTS")).toHaveLength(19);
+    expect(
+      Number(
+        (
+          await one<{ n: string }>(
+            pool,
+            "SELECT count(*)::text n FROM visit_reviews WHERE booking_id=$1",
+            [completed],
+          )
+        )!.n,
+      ),
+    ).toBe(1);
+  });
+
+  it("applies exactly one of two concurrent edits at the same version", async () => {
+    const client = await login();
+    await req("POST", `/api/v1/me/bookings/${completed}/review`, client, {
+      rating: 5,
+    });
+    const attempts = await Promise.all([
+      req("PATCH", `/api/v1/me/bookings/${completed}/review`, client, {
+        rating: 4,
+        expectedVersion: 1,
+      }),
+      req("PATCH", `/api/v1/me/bookings/${completed}/review`, client, {
+        rating: 3,
+        expectedVersion: 1,
+      }),
+    ]);
+    expect(attempts.filter((attempt) => attempt.status === 200)).toHaveLength(1);
+    expect(attempts.filter((attempt) => attempt.error?.code === "VERSION_CONFLICT")).toHaveLength(1);
+    expect(
+      (await one<{ version: number }>(pool, "SELECT version FROM visit_reviews WHERE booking_id=$1", [completed]))!
+        .version,
+    ).toBe(2);
+  });
+
+  it("publishes only a privacy-safe aggregate and keeps snapshots stable", async () => {
+    const client = await login();
+    expect(
+      (
+        await req("POST", `/api/v1/me/bookings/${completed}/review`, client, {
+          rating: 5,
+        })
+      ).status,
+    ).toBe(201);
+    let publicCatalog = await req<{
+      staff: Array<{ id: string; ratingAverage: number | null; ratingCount: number | null }>;
+    }>("GET", "/api/v1/public/salons/line/catalog");
+    expect(publicCatalog.data.staff.find((staff) => staff.id === f("staff-a-0"))).toMatchObject({
+      ratingAverage: null,
+      ratingCount: null,
+    });
+    const second = await completedBooking("900043", 21);
+    const third = await completedBooking("900044", 22);
+    await req("POST", `/api/v1/me/bookings/${second.bookingId}/review`, second.token, {
+      rating: 4,
+    });
+    await req("POST", `/api/v1/me/bookings/${third.bookingId}/review`, third.token, {
+      rating: 3,
+    });
+    publicCatalog = await req("GET", "/api/v1/public/salons/line/catalog");
+    expect(publicCatalog.data.staff.find((staff) => staff.id === f("staff-a-0"))).toMatchObject({
+      ratingAverage: 4,
+      ratingCount: 3,
+    });
+    const owner = await login("owner-a");
+    const work = await req<{
+      items: Array<{ id: string; ratingAverage: number; ratingCount: number }>;
+    }>("GET", `/api/v1/work/${f("salon-a")}/staff`, owner);
+    expect(work.data.items.find((staff) => staff.id === f("staff-a-0"))).toMatchObject({
+      ratingAverage: 4,
+      ratingCount: 3,
+    });
+    const master = await login("master");
+    expect(
+      (
+        await req<{ ratingAverage: number; ratingCount: number }>(
+          "GET",
+          `/api/v1/work/${f("salon-a")}/my-staff-profile`,
+          master,
+        )
+      ).data,
+    ).toMatchObject({ ratingAverage: 4, ratingCount: 3 });
+    expect(
+      (await req("GET", `/api/v1/work/${f("salon-a")}/staff`, master)).status,
+    ).toBe(403);
+    await pool.query("UPDATE staff SET name='Новое имя' WHERE id=$1", [f("staff-a-0")]);
+    const detail = await req<{ review: { staffNameSnapshot: string } }>(
+      "GET",
+      `/api/v1/me/bookings/${completed}`,
+      client,
+    );
+    expect(detail.data.review.staffNameSnapshot).toBe("София");
+  });
+
+  it("invalidates on outcome correction and requires explicit reactivation", async () => {
+    const client = await login();
+    const owner = await login("owner-a");
+    await req("POST", `/api/v1/me/bookings/${completed}/review`, client, { rating: 5 });
+    const corrected = await req(
+      "POST",
+      `/api/v1/work/${f("salon-a")}/bookings/${completed}/correct-outcome`,
+      owner,
+      {
+        expectedVersion: 1,
+        targetStatus: "no_show",
+        reason: "Исправление тестового исхода",
+      },
+    );
+    expect(corrected.status, JSON.stringify(corrected.error)).toBe(201);
+    expect(
+      (await one<{ status: string }>(pool, "SELECT status FROM visit_reviews WHERE booking_id=$1", [completed]))!
+        .status,
+    ).toBe("invalidated");
+    expect(
+      (
+        await req("PATCH", `/api/v1/me/bookings/${completed}/review`, client, {
+          rating: 4,
+          expectedVersion: 2,
+        })
+      ).error.code,
+    ).toBe("BOOKING_NOT_COMPLETED");
+    expect(
+      (
+        await req(
+          "POST",
+          `/api/v1/work/${f("salon-a")}/bookings/${completed}/correct-outcome`,
+          owner,
+          {
+            expectedVersion: 2,
+            targetStatus: "completed",
+            reason: "Визит подтверждён повторно",
+          },
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      (await one<{ status: string }>(pool, "SELECT status FROM visit_reviews WHERE booking_id=$1", [completed]))!
+        .status,
+    ).toBe("invalidated");
+    const reactivated = await req<{ status: string; version: number; rating: number }>(
+      "POST",
+      `/api/v1/me/bookings/${completed}/review`,
+      client,
+      { rating: 4 },
+    );
+    expect(reactivated).toMatchObject({
+      status: 201,
+      data: { status: "active", version: 3, rating: 4 },
+    });
+  });
+
+  it("keeps unlinked manual visits private and enables them after confirmed linking", async () => {
+    const client = await login("900045");
+    const other = await login("900046");
+    const user = (await one<{ id: string }>(pool, "SELECT id FROM users WHERE max_user_id='900045'"))!;
+    const customerId = randomUUID();
+    const bookingId = randomUUID();
+    const start = DateTime.now().minus({ days: 40 });
+    await pool.query(
+      "INSERT INTO customers(id,tenant_id,display_name) VALUES($1,$2,'Ручной клиент')",
+      [customerId, f("salon-a")],
+    );
+    await pool.query(
+      `INSERT INTO bookings(
+         id,tenant_id,customer_id,user_id,staff_id,service_id,start_at,end_at,
+         timezone_snapshot,status,source,service_name_snapshot,duration_snapshot,
+         price_minor_snapshot,created_by
+       ) VALUES($1,$2,$3,NULL,$4,$5,$6,$7,'Europe/Moscow','completed','manual',$8,60,250000,$9)`,
+      [
+        bookingId,
+        f("salon-a"),
+        customerId,
+        f("staff-a-0"),
+        f("service-a-0"),
+        start.toJSDate(),
+        start.plus({ hours: 1 }).toJSDate(),
+        "Стрижка и укладка",
+        f("owner-a"),
+      ],
+    );
+    expect(
+      (await req("POST", `/api/v1/me/bookings/${bookingId}/review`, client, { rating: 5 })).status,
+    ).toBe(404);
+    await pool.query("UPDATE customers SET user_id=$2 WHERE id=$1", [customerId, user.id]);
+    await pool.query("UPDATE bookings SET user_id=$2 WHERE customer_id=$1", [customerId, user.id]);
+    expect(
+      (await req("POST", `/api/v1/me/bookings/${bookingId}/review`, client, { rating: 5 })).status,
+    ).toBe(201);
+    expect(
+      (await req("PATCH", `/api/v1/me/bookings/${bookingId}/review`, other, { rating: 1, expectedVersion: 1 })).status,
+    ).toBe(404);
   });
 });
 

@@ -70,6 +70,8 @@ export interface Staff {
   serviceIds: string[];
   membershipId: string | null;
   photoMediaId: string | null;
+  ratingAverage?: number | null;
+  ratingCount?: number | null;
 }
 export interface Category {
   id: string;
@@ -105,8 +107,24 @@ export interface Booking {
   appliedVoucherId?: string | null;
   loyaltyRewardId?: string | null;
   allowedActions: string[];
+  reviewRating?: number | null;
+  reviewStatus?: "active" | "invalidated" | null;
+  canReview?: boolean;
+  review?: VisitReview | null;
+  reviewEligibility?: { eligible: boolean; reason: string | null };
   history?: { version: number; reason: string | null; createdAt: string }[];
   deliveries?: { state: string; category: string; lastError: string | null }[];
+}
+export interface VisitReview {
+  id: string;
+  rating: number;
+  status: "active" | "invalidated";
+  version: number;
+  staffNameSnapshot: string;
+  tenantNameSnapshot: string;
+  createdAt: string;
+  updatedAt: string;
+  invalidatedReason: string | null;
 }
 export interface Slot {
   staffId: string;

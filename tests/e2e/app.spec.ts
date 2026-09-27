@@ -46,6 +46,36 @@ test("client sees loyalty progress and can calculate an appointment", async ({
   ).toBe(true);
 });
 
+test("client rates a master after a completed visit and edits the rating", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Клиент Записаться, перенести визит, получить купон",
+    })
+    .click();
+  await page.getByRole("button", { name: "История", exact: true }).click();
+  await page.locator("a.booking-card").filter({ hasText: "Завершён" }).first().click();
+  await expect(page.getByRole("heading", { name: "Карточка визита" })).toBeVisible();
+
+  const edit = page.getByRole("button", { name: "Изменить оценку" });
+  if (await edit.isVisible().catch(() => false)) await edit.click();
+  await page.getByRole("radio", { name: "5 из 5 — Отлично" }).check();
+  await page.getByRole("button", { name: "Сохранить оценку" }).click();
+  await expect(page.getByLabel("Оценка 5 из 5")).toBeVisible();
+
+  await page.getByRole("button", { name: "Изменить оценку" }).click();
+  await page.getByRole("radio", { name: "4 из 5 — Хорошо" }).check();
+  await page.getByRole("button", { name: "Сохранить оценку" }).click();
+  await expect(page.getByLabel("Оценка 4 из 5")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test("owner can view loyalty settings and customer progress", async ({
   page,
 }) => {
