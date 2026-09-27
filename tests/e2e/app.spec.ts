@@ -137,11 +137,25 @@ test("client and owner can open Live Window screens", async ({ page }) => {
     page.getByRole("heading", { name: "Сообщить об освободившемся времени" }),
   ).toBeVisible();
   await expect(page.getByText(/не удерживает время/i)).toBeVisible();
+  for (const choice of [
+    page.locator(".live-window-form .checklist .check").first(),
+    page.locator(".live-window-form .inline-actions .check").first(),
+  ]) {
+    const checkbox = await choice.locator('input[type="checkbox"]').boundingBox();
+    const label = await choice.locator("span").boundingBox();
+    expect(checkbox).not.toBeNull();
+    expect(label).not.toBeNull();
+    expect(label!.x - (checkbox!.x + checkbox!.width)).toBeLessThanOrEqual(12);
+  }
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  await page.screenshot({
+    path: `test-results/live-window-form-${test.info().project.name}.png`,
+    fullPage: true,
+  });
 
   await page.goto("/");
   await page.getByRole("button", { name: /Владелец · Линия/ }).click();
@@ -272,6 +286,18 @@ test("salon media and friendly timezones reach the published storefront", async 
   await expect(page.getByAltText("Обложка услуги «Стрижка и укладка»")).toBeVisible();
   await expect(page.getByAltText("Фото Александр")).toBeVisible();
   await expect(page.getByText(/Часовой пояс: МСК · Москва/)).toBeVisible();
+
+  const saveSalon = page.getByRole("button", { name: "Сохранить", exact: true });
+  if (await saveSalon.isVisible()) {
+    await saveSalon.click();
+    await expect(page.getByText("Салон сохранён", { exact: true })).toBeVisible();
+  }
+  await page.getByRole("link", { name: /Все салоны/ }).click();
+  const familiarSalon = page
+    .locator("a.salon-card")
+    .filter({ hasText: "Линия · студия волос" });
+  await expect(familiarSalon.locator(".cover-image")).toBeVisible();
+  await expect(familiarSalon.locator(".salon-card-logo img")).toBeVisible();
   await page.screenshot({
     path: `test-results/catalog-media-${test.info().project.name}.png`,
     fullPage: true,

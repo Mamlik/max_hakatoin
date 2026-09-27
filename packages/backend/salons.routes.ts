@@ -136,7 +136,7 @@ async function publishCatalogMedia(
     mediaId,
   ]);
 }
-async function publicSalon(db: DB, tenant: Tenant) {
+export async function publicSalon(db: DB, tenant: Tenant) {
   const assets = await rows(
     db,
     "SELECT id,file_key FROM media_assets WHERE tenant_id=$1 AND published",

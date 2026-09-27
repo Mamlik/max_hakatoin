@@ -170,6 +170,43 @@ afterAll(async () => {
   redis.disconnect();
 });
 describe("booking and access invariants on PostgreSQL", () => {
+  it("returns published salon media in the familiar salons carousel", async () => {
+    const client = await login();
+    const salonId = f("salon-a");
+    const logoId = randomUUID();
+    const coverId = randomUUID();
+    await pool.query(
+      "INSERT INTO media_assets(id,tenant_id,purpose,file_key,published) VALUES($1,$2,'logo',$3,true),($4,$2,'cover',$5,true)",
+      [logoId, salonId, "published/test-logo.png", coverId, "published/test-cover.png"],
+    );
+    await pool.query(
+      "UPDATE tenants SET published_style=published_style || $2::jsonb WHERE id=$1",
+      [salonId, JSON.stringify({ logoMediaId: logoId, coverMediaId: coverId })],
+    );
+
+    const result = await req<{
+      items: Array<{
+        id: string;
+        name: string;
+        style: { logoMediaId: string; coverMediaId: string };
+        media: Array<{ id: string; fileKey: string }>;
+      }>;
+    }>("GET", "/api/v1/me/salons", client);
+
+    expect(result.status).toBe(200);
+    const salon = result.data.items.find((item) => item.id === salonId);
+    expect(salon).toMatchObject({
+      name: "Линия · студия волос",
+      style: { logoMediaId: logoId, coverMediaId: coverId },
+    });
+    expect(salon?.media).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: logoId, fileKey: "published/test-logo.png" }),
+        expect.objectContaining({ id: coverId, fileKey: "published/test-cover.png" }),
+      ]),
+    );
+  });
+
   it("creates a salon without seed and publishes after service/staff/schedule setup", async () => {
     const token = await login("new");
     const t = await req<{ id: string; version: number }>(

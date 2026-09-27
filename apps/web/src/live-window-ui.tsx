@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, refreshData, useApi } from "./api";
-import { BackLink, Badge, Empty, Field, Load, PageTitle, dateTime, dayISO, useAction } from "./ui";
+import { BackLink, Badge, ChoiceGroup, Empty, Field, Load, PageTitle, dateTime, dayISO, useAction } from "./ui";
 import type { Catalog, Items, LiveWindowOffer, Salon, WaitlistRequest } from "./types";
 
 const weekdays = [
@@ -62,9 +62,9 @@ export function WaitlistForm() {
     {!code ? <Empty title="Не выбран салон" text="Откройте форму из страницы записи выбранного салона." /> : <Load loading={salon.loading || catalog.loading} error={salon.error || catalog.error}>
       <section className="panel live-window-form">
         <Field label="Услуга"><select value={serviceId} onChange={(event)=>{setServiceId(event.target.value);setStaffIds([])}}><option value="">Выберите услугу</option>{catalog.data?.services.map((service)=><option key={service.id} value={service.id}>{service.name} · {service.durationMin} мин</option>)}</select></Field>
-        <Field label="Мастера"><div className="checklist">{availableStaff.map((staff)=><label className="check" key={staff.id}><input type="checkbox" checked={staffIds.includes(staff.id)} onChange={(event)=>setStaffIds((old)=>event.target.checked?[...old,staff.id]:old.filter((id)=>id!==staff.id))}/><span>{staff.name}</span></label>)}</div><small>Если никого не выбрать, подойдёт любой мастер услуги.</small></Field>
+        <ChoiceGroup label="Мастера" hint="Если никого не выбрать, подойдёт любой мастер услуги."><div className="checklist">{availableStaff.map((staff)=><label className="check" key={staff.id}><input type="checkbox" checked={staffIds.includes(staff.id)} onChange={(event)=>setStaffIds((old)=>event.target.checked?[...old,staff.id]:old.filter((id)=>id!==staff.id))}/><span>{staff.name}</span></label>)}</div></ChoiceGroup>
         <div className="two-columns"><Field label="С даты"><input type="date" min={dayISO()} max={dayISO(30)} value={dateFrom} onChange={(event)=>setDateFrom(event.target.value)}/></Field><Field label="По дату"><input type="date" min={dateFrom} max={dayISO(30)} value={dateTo} onChange={(event)=>setDateTo(event.target.value)}/></Field></div>
-        <Field label="Дни недели"><div className="inline-actions">{weekdays.map(([number,label])=><label className="check" key={number}><input type="checkbox" checked={days.includes(number)} onChange={(event)=>setDays((old)=>event.target.checked?[...old,number]:old.filter((day)=>day!==number))}/><span>{label}</span></label>)}</div></Field>
+        <ChoiceGroup label="Дни недели"><div className="inline-actions">{weekdays.map(([number,label])=><label className="check" key={number}><input type="checkbox" checked={days.includes(number)} onChange={(event)=>setDays((old)=>event.target.checked?[...old,number]:old.filter((day)=>day!==number))}/><span>{label}</span></label>)}</div></ChoiceGroup>
         <div className="two-columns"><Field label="Не раньше"><input type="time" value={start} onChange={(event)=>setStart(event.target.value)}/></Field><Field label="Не позже"><input type="time" value={end} onChange={(event)=>setEnd(event.target.value)}/></Field></div>
         <Field label="Минимум времени до визита"><select value={notice} onChange={(event)=>setNotice(Number(event.target.value))}><option value={60}>1 час</option><option value={120}>2 часа</option><option value={360}>6 часов</option><option value={1440}>1 день</option></select></Field>
         <div className="notice">Это запрос ожидания, а не запись. Если время освободится, бот MAX пришлёт одно предложение с ограниченным сроком. Слот останется доступен другим клиентам до подтверждения.</div>

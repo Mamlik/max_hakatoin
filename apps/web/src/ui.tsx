@@ -265,6 +265,23 @@ export function Field({
     </label>
   );
 }
+export function ChoiceGroup({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: ReactNode;
+  hint?: string;
+}) {
+  return (
+    <fieldset className="field choice-field">
+      <legend>{label}</legend>
+      {children}
+      {hint && <small>{hint}</small>}
+    </fieldset>
+  );
+}
 // The native file input renders a browser-locale button that ignores the design system.
 export function FilePick({
   accept,
