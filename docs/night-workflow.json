@@ -6,9 +6,10 @@
   "uiBranch": "codex/ui-experiments",
   "reviewsBaseBranch": "codex/live-window",
   "reviewsBaseCommit": "34f17ebe135a4783fa271893ac0769bbdd9839d6",
-  "phase": "REVIEWS_IMPLEMENTING",
+  "phase": "REVIEWS_IMPLEMENTED",
   "completedStages": [
-    "reviews_spec"
+    "reviews_spec",
+    "reviews_implementation"
   ],
   "automationIds": {
     "reviews_spec": "1-6",
@@ -18,7 +19,9 @@
     "ui_spec": "5-6-ui",
     "ui_implementation": "6-6-ui"
   },
-  "stageCommits": {},
+  "stageCommits": {
+    "reviews_implementation": "cb04096"
+  },
   "attempts": {
     "reviews_spec": 1,
     "reviews_implementation": 1,
@@ -27,8 +30,8 @@
     "ui_spec": 0,
     "ui_implementation": 0
   },
-  "lastCompletedMilestone": "reviews-implementation-started",
+  "lastCompletedMilestone": "reviews-implementation-v1.0",
   "lastError": null,
   "blockedReason": null,
-  "updatedAt": "2026-09-28T02:25:00+03:00"
+  "updatedAt": "2026-09-28T02:35:00+03:00"
 }
