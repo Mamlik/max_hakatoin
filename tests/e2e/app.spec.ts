@@ -60,13 +60,17 @@ test("client rates a master after a completed visit and edits the rating", async
   await expect(page.getByRole("heading", { name: "Карточка визита" })).toBeVisible();
 
   const edit = page.getByRole("button", { name: "Изменить оценку" });
-  if (await edit.isVisible().catch(() => false)) await edit.click();
-  await page.getByRole("radio", { name: "5 из 5 — Отлично" }).check();
+  const fiveStars = page.getByRole("radio", { name: "5 из 5 — Отлично" });
+  await expect(edit.or(fiveStars)).toBeVisible();
+  if (await edit.isVisible()) await edit.click();
+  await fiveStars.check();
   await page.getByRole("button", { name: "Сохранить оценку" }).click();
   await expect(page.getByLabel("Оценка 5 из 5")).toBeVisible();
 
   await page.getByRole("button", { name: "Изменить оценку" }).click();
-  await page.getByRole("radio", { name: "4 из 5 — Хорошо" }).check();
+  await page.getByRole("radio", { name: "5 из 5 — Отлично" }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("radio", { name: "4 из 5 — Хорошо" })).toBeChecked();
   await page.getByRole("button", { name: "Сохранить оценку" }).click();
   await expect(page.getByLabel("Оценка 4 из 5")).toBeVisible();
   expect(

@@ -1096,13 +1096,35 @@ describe("post-visit master reviews", () => {
       review: { rating: 5, status: "active", version: 1 },
       reviewEligibility: { eligible: true },
     });
+    const updateKey = randomUUID();
     const updated = await req<{ rating: number; version: number }>(
       "PATCH",
       `/api/v1/me/bookings/${completed}/review`,
       client,
       { rating: 4, expectedVersion: 1 },
+      updateKey,
     );
     expect(updated).toMatchObject({ status: 200, data: { rating: 4, version: 2 } });
+    expect(
+      await req(
+        "PATCH",
+        `/api/v1/me/bookings/${completed}/review`,
+        client,
+        { rating: 4, expectedVersion: 1 },
+        updateKey,
+      ),
+    ).toMatchObject({ status: 200, data: { rating: 4, version: 2 } });
+    expect(
+      (
+        await req(
+          "PATCH",
+          `/api/v1/me/bookings/${completed}/review`,
+          client,
+          { rating: 3, expectedVersion: 1 },
+          updateKey,
+        )
+      ).error.code,
+    ).toBe("IDEMPOTENCY_KEY_REUSED");
     expect(
       (
         await req("PATCH", `/api/v1/me/bookings/${completed}/review`, client, {
@@ -1139,6 +1161,9 @@ describe("post-visit master reviews", () => {
     await pool.query("UPDATE bot_channels SET state='stopped' WHERE user_id=$1", [
       stoppedBotBooking.userId,
     ]);
+    const deliveryCountBefore = Number(
+      (await one<{ n: string }>(pool, "SELECT count(*)::text n FROM deliveries"))!.n,
+    );
     expect(
       (
         await req(
@@ -1149,9 +1174,23 @@ describe("post-visit master reviews", () => {
         )
       ).status,
     ).toBe(201);
+    expect(Number((await one<{ n: string }>(pool, "SELECT count(*)::text n FROM deliveries"))!.n)).toBe(
+      deliveryCountBefore,
+    );
   });
 
   it("allows exactly one of twenty concurrent first reviews", async () => {
+    const pairBooking = await completedBooking("900047", 23);
+    const pair = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        req("POST", `/api/v1/me/bookings/${pairBooking.bookingId}/review`, pairBooking.token, {
+          rating: 4,
+        }),
+      ),
+    );
+    expect(pair.filter((result) => result.status === 201)).toHaveLength(1);
+    expect(pair.filter((result) => result.error?.code === "REVIEW_ALREADY_EXISTS")).toHaveLength(1);
+
     const client = await login();
     const results = await Promise.all(
       Array.from({ length: 20 }, () =>
@@ -1198,6 +1237,38 @@ describe("post-visit master reviews", () => {
     ).toBe(2);
   });
 
+  it("serializes first review creation against an outcome correction", async () => {
+    const client = await login();
+    const owner = await login("owner-a");
+    const [review, correction] = await Promise.all([
+      req("POST", `/api/v1/me/bookings/${completed}/review`, client, {
+        rating: 5,
+      }),
+      req(
+        "POST",
+        `/api/v1/work/${f("salon-a")}/bookings/${completed}/correct-outcome`,
+        owner,
+        {
+          expectedVersion: 1,
+          targetStatus: "no_show",
+          reason: "Проверка гонки с отзывом",
+        },
+      ),
+    ]);
+    expect(correction.status, JSON.stringify(correction.error)).toBe(201);
+    expect([201, 409]).toContain(review.status);
+    expect(
+      (await one<{ status: string }>(pool, "SELECT status FROM bookings WHERE id=$1", [completed]))!
+        .status,
+    ).toBe("no_show");
+    const stored = await one<{ status: string }>(
+      pool,
+      "SELECT status FROM visit_reviews WHERE booking_id=$1",
+      [completed],
+    );
+    expect(stored?.status ?? "absent").not.toBe("active");
+  });
+
   it("publishes only a privacy-safe aggregate and keeps snapshots stable", async () => {
     const client = await login();
     expect(
@@ -1218,6 +1289,11 @@ describe("post-visit master reviews", () => {
     const third = await completedBooking("900044", 22);
     await req("POST", `/api/v1/me/bookings/${second.bookingId}/review`, second.token, {
       rating: 4,
+    });
+    publicCatalog = await req("GET", "/api/v1/public/salons/line/catalog");
+    expect(publicCatalog.data.staff.find((staff) => staff.id === f("staff-a-0"))).toMatchObject({
+      ratingAverage: null,
+      ratingCount: null,
     });
     await req("POST", `/api/v1/me/bookings/${third.bookingId}/review`, third.token, {
       rating: 3,
@@ -1249,12 +1325,55 @@ describe("post-visit master reviews", () => {
       (await req("GET", `/api/v1/work/${f("salon-a")}/staff`, master)).status,
     ).toBe(403);
     await pool.query("UPDATE staff SET name='Новое имя' WHERE id=$1", [f("staff-a-0")]);
-    const detail = await req<{ review: { staffNameSnapshot: string } }>(
+    await pool.query("UPDATE tenants SET name='Новое имя салона' WHERE id=$1", [f("salon-a")]);
+    const detail = await req<{
+      review: { staffNameSnapshot: string; tenantNameSnapshot: string };
+    }>(
       "GET",
       `/api/v1/me/bookings/${completed}`,
       client,
     );
     expect(detail.data.review.staffNameSnapshot).toBe("София");
+    expect(detail.data.review.tenantNameSnapshot).toBe("Линия · студия волос");
+
+    const currentStaff = (await one<{ version: number }>(
+      pool,
+      "SELECT version FROM staff WHERE id=$1",
+      [f("staff-a-0")],
+    ))!;
+    expect(
+      (
+        await req(
+          "POST",
+          `/api/v1/work/${f("salon-a")}/staff/${f("staff-a-0")}/archive`,
+          owner,
+          { expectedVersion: currentStaff.version },
+        )
+      ).status,
+    ).toBe(201);
+    publicCatalog = await req("GET", "/api/v1/public/salons/line/catalog");
+    expect(publicCatalog.data.staff.some((staff: { id: string }) => staff.id === f("staff-a-0"))).toBe(
+      false,
+    );
+    expect(
+      Number(
+        (
+          await one<{ n: string }>(
+            pool,
+            "SELECT count(*)::text n FROM visit_reviews WHERE staff_id=$1 AND status='active'",
+            [f("staff-a-0")],
+          )
+        )!.n,
+      ),
+    ).toBe(3);
+    const archivedWork = await req<{
+      items: Array<{ id: string; active: boolean; ratingAverage: number; ratingCount: number }>;
+    }>("GET", `/api/v1/work/${f("salon-a")}/staff`, owner);
+    expect(archivedWork.data.items.find((staff) => staff.id === f("staff-a-0"))).toMatchObject({
+      active: false,
+      ratingAverage: 4,
+      ratingCount: 3,
+    });
   });
 
   it("invalidates on outcome correction and requires explicit reactivation", async () => {
@@ -1276,6 +1395,13 @@ describe("post-visit master reviews", () => {
       (await one<{ status: string }>(pool, "SELECT status FROM visit_reviews WHERE booking_id=$1", [completed]))!
         .status,
     ).toBe("invalidated");
+    const invalidatedAggregate = await req<{
+      items: Array<{ id: string; ratingAverage: number | null; ratingCount: number }>;
+    }>("GET", `/api/v1/work/${f("salon-a")}/staff`, owner);
+    expect(invalidatedAggregate.data.items.find((staff) => staff.id === f("staff-a-0"))).toMatchObject({
+      ratingAverage: null,
+      ratingCount: 0,
+    });
     expect(
       (
         await req("PATCH", `/api/v1/me/bookings/${completed}/review`, client, {
@@ -1311,6 +1437,13 @@ describe("post-visit master reviews", () => {
     expect(reactivated).toMatchObject({
       status: 201,
       data: { status: "active", version: 3, rating: 4 },
+    });
+    const reactivatedAggregate = await req<{
+      items: Array<{ id: string; ratingAverage: number | null; ratingCount: number }>;
+    }>("GET", `/api/v1/work/${f("salon-a")}/staff`, owner);
+    expect(reactivatedAggregate.data.items.find((staff) => staff.id === f("staff-a-0"))).toMatchObject({
+      ratingAverage: 4,
+      ratingCount: 1,
     });
   });
 
