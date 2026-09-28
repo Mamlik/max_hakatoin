@@ -6,7 +6,7 @@
   "uiBranch": "codex/ui-experiments",
   "reviewsBaseBranch": "codex/live-window",
   "reviewsBaseCommit": "34f17ebe135a4783fa271893ac0769bbdd9839d6",
-  "phase": "REVIEWS_QA_PASSED",
+  "phase": "MERGING_TO_MAIN",
   "completedStages": [
     "reviews_spec",
     "reviews_implementation",
@@ -28,12 +28,12 @@
     "reviews_spec": 1,
     "reviews_implementation": 1,
     "reviews_qa": 1,
-    "merge": 0,
+    "merge": 1,
     "ui_spec": 0,
     "ui_implementation": 0
   },
-  "lastCompletedMilestone": "reviews-full-regression-green",
+  "lastCompletedMilestone": "merge-preflight-green",
   "lastError": null,
   "blockedReason": null,
-  "updatedAt": "2026-09-28T06:34:00+03:00"
+  "updatedAt": "2026-09-28T06:51:00+03:00"
 }
