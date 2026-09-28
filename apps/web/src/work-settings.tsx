@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, useApi, useAuth } from "./api";
 import {
@@ -11,15 +11,12 @@ import {
   SimpleForm,
   CommandButton,
   Modal,
-  FilePick,
   TimezonePicker,
 } from "./ui";
-import { StorefrontView } from "./personal";
+import { StorefrontEditor } from "./storefront-editor";
 import { LinkBox } from "./work";
 import type {
   Salon,
-  Style,
-  Media,
   Items,
   Service,
   Staff,
@@ -41,33 +38,8 @@ export function SettingsPage() {
   const services = useApi<Items<Service>>(`/work/${t}/services`),
     staff = useApi<Items<Staff>>(`/work/${t}/staff`),
     categories = useApi<Items<Category>>(`/work/${t}/categories`);
-  const [style, setStyle] = useState<Style>(),
-    [storefrontVersion, setStorefrontVersion] = useState<number>(),
-    [preview, setPreview] = useState(false);
   const a = useAction();
-  useEffect(() => setStyle(draft.data?.draftStyle), [draft.data?.version]);
-  useEffect(
-    () => setStorefrontVersion(profile.data?.version),
-    [profile.data?.version],
-  );
   const member = auth.me!.memberships.find((m) => m.tenantId === t)!;
-  const upload = async (purpose: "logo" | "cover", file?: File) => {
-    if (!file) return;
-    const form = new FormData();
-    form.append("purpose", purpose);
-    form.append("file", file);
-    await a.run(async () => {
-      const media = await api<Media>(`/work/${t}/media`, "POST", form);
-      setStyle((s) =>
-        s
-          ? {
-              ...s,
-              [purpose === "logo" ? "logoMediaId" : "coverMediaId"]: media.id,
-            }
-          : s,
-      );
-    }, "Изображение загружено. Сохраните черновик оформления.");
-  };
   return (
     <>
       <PageTitle
@@ -230,198 +202,16 @@ export function SettingsPage() {
                     />
                   </section>
                 </div>
-                <section className="panel">
-                  <div className="section-head">
-                    <h2>Оформление витрины</h2>
-                    <span className="badge draft">
-                      Один шаблон · адаптивный
-                    </span>
-                  </div>
-                  {style && (
-                    <>
-                      <div className="two-columns">
-                        <div>
-                          <Field label="Описание">
-                            <textarea
-                              rows={4}
-                              value={style.description}
-                              onChange={(e) =>
-                                setStyle({
-                                  ...style,
-                                  description: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Акцентный цвет">
-                            <div className="palette">
-                              {["violet", "rose", "teal", "amber"].map(
-                                (color) => (
-                                  <button
-                                    key={color}
-                                    className={`swatch ${color} ${style.accent === color ? "selected" : ""}`}
-                                    aria-label={color}
-                                    onClick={() =>
-                                      setStyle({ ...style, accent: color })
-                                    }
-                                  >
-                                    {style.accent === color ? "✓" : ""}
-                                  </button>
-                                ),
-                              )}
-                            </div>
-                          </Field>
-                          <Field label="Порядок категорий">
-                            <div className="category-order">
-                              {(style.categoryOrder.length
-                                ? style.categoryOrder
-                                : (categories.data?.items.map((c) => c.id) ??
-                                  [])
-                              ).map((id, index, all) => (
-                                <div key={id}>
-                                  <span>
-                                    {categories.data?.items.find(
-                                      (c) => c.id === id,
-                                    )?.name ?? "Категория"}
-                                  </span>
-                                  <button
-                                    className="text-button"
-                                    disabled={index === 0}
-                                    onClick={() => {
-                                      const order = [...all];
-                                      [order[index - 1], order[index]] = [
-                                        order[index]!,
-                                        order[index - 1]!,
-                                      ];
-                                      setStyle({
-                                        ...style,
-                                        categoryOrder: order,
-                                      });
-                                    }}
-                                  >
-                                    ↑
-                                  </button>
-                                  <button
-                                    className="text-button"
-                                    disabled={index === all.length - 1}
-                                    onClick={() => {
-                                      const order = [...all];
-                                      [order[index + 1], order[index]] = [
-                                        order[index]!,
-                                        order[index + 1]!,
-                                      ];
-                                      setStyle({
-                                        ...style,
-                                        categoryOrder: order,
-                                      });
-                                    }}
-                                  >
-                                    ↓
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </Field>
-                        </div>
-                        <div>
-                          <Field
-                            label="Логотип"
-                            hint="JPEG, PNG или WebP до 5 МБ. Сервер удалит метаданные и сохранит WebP."
-                          >
-                            <FilePick
-                              accept="image/jpeg,image/png,image/webp"
-                              disabled={a.busy}
-                              onPick={(f) => void upload("logo", f)}
-                              label="Выбрать логотип"
-                            />
-                          </Field>
-                          {style.logoMediaId && (
-                            <p className="small success-text">Логотип выбран</p>
-                          )}
-                          <Field
-                            label="Обложка"
-                            hint="Рекомендуемое соотношение 16:9; обрезка по центру."
-                          >
-                            <FilePick
-                              accept="image/jpeg,image/png,image/webp"
-                              disabled={a.busy}
-                              onPick={(f) => void upload("cover", f)}
-                              label="Выбрать обложку"
-                            />
-                          </Field>
-                          {style.coverMediaId && (
-                            <p className="small success-text">
-                              Обложка выбрана
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="inline-actions">
-                        <button
-                          className="button primary"
-                          disabled={a.busy}
-                          onClick={() =>
-                            void a.run(
-                              async () => {
-                                const saved = await api<{ version: number }>(
-                                  `/work/${t}/storefront/draft`,
-                                  "PUT",
-                                  {
-                                    expectedVersion:
-                                      storefrontVersion ?? salon.version,
-                                    style,
-                                  },
-                                );
-                                setStorefrontVersion(saved.version);
-                              },
-                              "Черновик сохранён",
-                            )
-                          }
-                        >
-                          Сохранить черновик
-                        </button>
-                        <button
-                          className="button secondary"
-                          onClick={() => setPreview(true)}
-                        >
-                          Предпросмотр
-                        </button>
-                        <CommandButton
-                          path={`/work/${t}/storefront/publish`}
-                          body={{
-                            expectedVersion: storefrontVersion ?? salon.version,
-                          }}
-                          label="Опубликовать сохранённое оформление"
-                        />
-                      </div>
-                      <p className="small muted">
-                        Сначала сохраните изменения, затем публикуйте. Статус
-                        салона переключается отдельно.
-                      </p>
-                    </>
-                  )}
-                  {a.feedback}
-                </section>
-                {preview && style && (
-                  <Modal
-                    title="Предпросмотр витрины"
-                    onClose={() => setPreview(false)}
-                  >
-                    <StorefrontView
-                      salon={{
-                        ...salon,
-                        style,
-                        media: draft.data?.media ?? [],
-                      }}
-                      catalog={{
-                        services:
-                          services.data?.items.filter((s) => s.active) ?? [],
-                        staff: staff.data?.items.filter((s) => s.active) ?? [],
-                        categories: categories.data?.items ?? [],
-                      }}
-                      preview
-                    />
-                  </Modal>
+                {draft.data && (
+                  <StorefrontEditor
+                    tenantId={t!}
+                    salon={salon}
+                    draft={draft.data}
+                    services={services.data?.items ?? []}
+                    staff={staff.data?.items ?? []}
+                    categories={categories.data?.items ?? []}
+                    enabled={auth.storefrontThemesV2}
+                  />
                 )}
               </>
             );

@@ -56,6 +56,10 @@ const env = z
     MEDIA_ROOT: z.string().default("./media"),
     BOOKING_HORIZON_DAYS: z.coerce.number().int().min(1).max(30).default(30),
     SLOT_STEP_MINUTES: z.coerce.number().int().min(5).max(60).default(15),
+    STOREFRONT_THEMES_V2: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
   })
   .parse({
     ...process.env,

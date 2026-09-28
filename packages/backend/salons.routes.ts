@@ -26,6 +26,7 @@ import {
 } from "../contracts/schemas.js";
 import type {
   Tenant,
+  Style,
   Service,
   Staff,
   Booking,
@@ -45,6 +46,39 @@ const catalogMedia = ["owner", "admin", "master"] as (
   | "admin"
   | "master"
 )[];
+const styleDefaults = {
+  schemaVersion: 2 as const,
+  themePreset: "studio" as const,
+  colorMode: "light" as const,
+  coverFocalPoint: { x: 50, y: 50 },
+  serviceCards: { variant: "compact" as const, showDescription: true },
+  staffCards: {
+    variant: "compact" as const,
+    showDescription: true,
+    showRating: true,
+  },
+  sectionOrder: ["services", "staff", "gallery"] as (
+    | "services"
+    | "staff"
+    | "gallery"
+  )[],
+  galleryMediaIds: [] as string[],
+};
+function normalizeStyle(value: Style): Style {
+  return {
+    ...styleDefaults,
+    ...value,
+    schemaVersion: 2,
+    coverFocalPoint: value.coverFocalPoint ?? styleDefaults.coverFocalPoint,
+    serviceCards: value.serviceCards ?? styleDefaults.serviceCards,
+    staffCards: value.staffCards ?? styleDefaults.staffCards,
+    sectionOrder:
+      value.sectionOrder?.length === 3
+        ? value.sectionOrder
+        : [...styleDefaults.sectionOrder],
+    galleryMediaIds: value.galleryMediaIds ?? [],
+  };
+}
 export async function tenantById(db: DB, id: string) {
   return required(
     await one<Tenant>(db, "SELECT * FROM tenants WHERE id=$1", [id]),
@@ -78,9 +112,11 @@ export async function publishCheck(db: DB, tenant: Tenant) {
   ];
 }
 async function publishStyle(db: DB, tenant: Tenant) {
+  const draftStyle = normalizeStyle(tenant.draft_style);
   for (const asset of [
-    tenant.draft_style.logoMediaId,
-    tenant.draft_style.coverMediaId,
+    draftStyle.logoMediaId,
+    draftStyle.coverMediaId,
+    ...draftStyle.galleryMediaIds!,
   ].filter(Boolean)) {
     const media = required(
       await one<{ file_key: string }>(
@@ -100,7 +136,7 @@ async function publishStyle(db: DB, tenant: Tenant) {
   }
   return one<Tenant>(
     db,
-    "UPDATE tenants SET published_style=draft_style,published_profile=$2,version=version+1 WHERE id=$1 RETURNING *",
+    "UPDATE tenants SET draft_style=$3,published_style=$3,published_profile=$2,version=version+1 WHERE id=$1 RETURNING *",
     [
       tenant.id,
       JSON.stringify({
@@ -110,6 +146,7 @@ async function publishStyle(db: DB, tenant: Tenant) {
         contact: tenant.contact,
         timezone: tenant.timezone,
       }),
+      JSON.stringify(draftStyle),
     ],
   );
 }
@@ -146,7 +183,7 @@ export async function publicSalon(db: DB, tenant: Tenant) {
     id: tenant.id,
     publicCode: tenant.public_code,
     ...tenant.published_profile,
-    style: tenant.published_style,
+    style: normalizeStyle(tenant.published_style),
     media: assets,
     partnerEnabled: tenant.partner_enabled,
   };
@@ -343,7 +380,9 @@ export function salonRoutes(app: FastifyInstance) {
         const t = await tenantById(db, p.t!);
         return {
           ...t,
-          style: t.draft_style,
+          draftStyle: normalizeStyle(t.draft_style),
+          publishedStyle: normalizeStyle(t.published_style),
+          style: normalizeStyle(t.draft_style),
           media: await rows(
             db,
             "SELECT id,file_key,purpose FROM media_assets WHERE tenant_id=$1",
@@ -382,6 +421,14 @@ export function salonRoutes(app: FastifyInstance) {
             db,
             "SELECT id FROM categories WHERE id=$1 AND tenant_id=$2",
             [categoryId, t.id],
+          ),
+        );
+      for (const asset of b.style.galleryMediaIds)
+        required(
+          await one(
+            db,
+            "SELECT id FROM media_assets WHERE id=$1 AND tenant_id=$2 AND purpose='gallery'",
+            [asset, t.id],
           ),
         );
       await audit(db, t.id, actor.id, "storefront.draft", t.id);
@@ -499,7 +546,7 @@ export function salonRoutes(app: FastifyInstance) {
       if (!file) fail(422, "VALIDATION_ERROR", "Выберите изображение");
       const purposeField = file.fields.purpose;
       const purpose = z
-        .enum(["logo", "cover", "staff", "service"])
+        .enum(["logo", "cover", "staff", "service", "gallery"])
         .parse(
           purposeField &&
             !Array.isArray(purposeField) &&
@@ -509,7 +556,7 @@ export function salonRoutes(app: FastifyInstance) {
         );
       if (
         (member.role === "admin" &&
-          !["staff", "service"].includes(purpose)) ||
+          !["staff", "service", "gallery"].includes(purpose)) ||
         (member.role === "master" && purpose !== "staff")
       )
         fail(
@@ -529,6 +576,7 @@ export function salonRoutes(app: FastifyInstance) {
           cover: [1600, 900],
           staff: [800, 800],
           service: [1200, 800],
+          gallery: [1600, 1200],
         }[purpose]!;
         output = await image
           .rotate()
@@ -579,7 +627,7 @@ export function salonRoutes(app: FastifyInstance) {
       );
       if (
         (member.role === "admin" &&
-          !["staff", "service"].includes(media.purpose)) ||
+          !["staff", "service", "gallery"].includes(media.purpose)) ||
         (member.role === "master" && media.purpose !== "staff")
       )
         fail(403, "FORBIDDEN", "Недостаточно прав");

@@ -170,6 +170,25 @@ beforeAll(async () => {
         "utf8",
       ),
     );
+  if (
+    !String(
+      (
+        await one<{ definition: string }>(
+          pool,
+          "SELECT pg_get_constraintdef(oid) definition FROM pg_constraint WHERE conname='media_assets_purpose_check'",
+        )
+      )?.definition ?? "",
+    ).includes("gallery")
+  )
+    await pool.query(
+      await readFile(
+        new URL(
+          "../packages/db/migrations/006_storefront_customization.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
   app = await createApp();
 });
 beforeEach(async () => {
@@ -217,6 +236,130 @@ describe("booking and access invariants on PostgreSQL", () => {
         expect.objectContaining({ id: coverId, fileKey: "published/test-cover.png" }),
       ]),
     );
+  });
+
+  it("normalizes legacy storefront styles and publishes validated v2 presets", async () => {
+    const owner = await login("owner-a");
+    const salonId = f("salon-a");
+    const root = `/api/v1/work/${salonId}`;
+    await pool.query(
+      "UPDATE tenants SET draft_style=$2,published_style=$2 WHERE id=$1",
+      [
+        salonId,
+        JSON.stringify({
+          accent: "violet",
+          description: "Legacy",
+          categoryOrder: [],
+        }),
+      ],
+    );
+    const draft = await req<{
+      version: number;
+      draftStyle: { schemaVersion: number; themePreset: string; sectionOrder: string[] };
+    }>("GET", `${root}/storefront/draft`, owner);
+    expect(draft.status).toBe(200);
+    expect(draft.data.draftStyle).toMatchObject({
+      schemaVersion: 2,
+      themePreset: "studio",
+      sectionOrder: ["services", "staff", "gallery"],
+    });
+
+    const style = {
+      schemaVersion: 2 as const,
+      accent: "teal",
+      description: "Новая витрина",
+      categoryOrder: [],
+      themePreset: "editorial",
+      colorMode: "dark",
+      coverFocalPoint: { x: 35, y: 62 },
+      serviceCards: { variant: "media", showDescription: false },
+      staffCards: {
+        variant: "profile",
+        showDescription: true,
+        showRating: true,
+      },
+      sectionOrder: ["gallery", "services", "staff"],
+      galleryMediaIds: [],
+    };
+    const saved = await req<{ version: number }>(
+      "PUT",
+      `${root}/storefront/draft`,
+      owner,
+      { expectedVersion: draft.data.version, style },
+    );
+    expect(saved.status, JSON.stringify(saved.error)).toBe(200);
+    const published = await req<{ version: number }>(
+      "POST",
+      `${root}/storefront/publish`,
+      owner,
+      { expectedVersion: saved.data.version },
+    );
+    expect(published.status, JSON.stringify(published.error)).toBe(201);
+    const publicSalon = await req<{ style: typeof style }>(
+      "GET",
+      "/api/v1/public/salons/line",
+    );
+    expect(publicSalon.status).toBe(200);
+    expect(publicSalon.data.style).toMatchObject({
+      themePreset: "editorial",
+      colorMode: "dark",
+      coverFocalPoint: { x: 35, y: 62 },
+      serviceCards: { variant: "media", showDescription: false },
+    });
+  });
+
+  it("rejects duplicate sections and a gallery asset from another tenant", async () => {
+    const owner = await login("owner-a");
+    const salonId = f("salon-a");
+    const root = `/api/v1/work/${salonId}`;
+    const draft = await req<{ version: number }>(
+      "GET",
+      `${root}/storefront/draft`,
+      owner,
+    );
+    const foreignGallery = randomUUID();
+    await pool.query(
+      "INSERT INTO media_assets(id,tenant_id,purpose,file_key,published) VALUES($1,$2,'gallery',$3,false)",
+      [foreignGallery, f("salon-b"), "draft/foreign-gallery.webp"],
+    );
+    const base = {
+      schemaVersion: 2,
+      accent: "violet",
+      description: "Tenant-safe",
+      categoryOrder: [],
+      themePreset: "studio",
+      colorMode: "light",
+      coverFocalPoint: { x: 50, y: 50 },
+      serviceCards: { variant: "compact", showDescription: true },
+      staffCards: {
+        variant: "compact",
+        showDescription: true,
+        showRating: true,
+      },
+      sectionOrder: ["services", "staff", "gallery"],
+      galleryMediaIds: [foreignGallery],
+    };
+    const foreign = await req(
+      "PUT",
+      `${root}/storefront/draft`,
+      owner,
+      { expectedVersion: draft.data.version, style: base },
+    );
+    expect(foreign.status).toBe(404);
+    const duplicate = await req(
+      "PUT",
+      `${root}/storefront/draft`,
+      owner,
+      {
+        expectedVersion: draft.data.version,
+        style: {
+          ...base,
+          galleryMediaIds: [],
+          sectionOrder: ["services", "services", "gallery"],
+        },
+      },
+    );
+    expect(duplicate.status).toBe(422);
   });
 
   it("creates a salon without seed and publishes after service/staff/schedule setup", async () => {

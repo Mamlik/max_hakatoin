@@ -20,11 +20,41 @@ export const profile = z
   .strict();
 export const style = z
   .object({
+    schemaVersion: z.literal(2),
     accent: z.enum(["violet", "rose", "teal", "amber"]),
     description: z.string().max(2000),
     logoMediaId: id.nullable().optional(),
     coverMediaId: id.nullable().optional(),
     categoryOrder: z.array(id).max(100),
+    themePreset: z.enum(["studio", "editorial", "noir"]),
+    colorMode: z.enum(["light", "dark"]),
+    coverFocalPoint: z
+      .object({
+        x: z.number().finite().min(0).max(100),
+        y: z.number().finite().min(0).max(100),
+      })
+      .strict(),
+    serviceCards: z
+      .object({
+        variant: z.enum(["compact", "media"]),
+        showDescription: z.boolean(),
+      })
+      .strict(),
+    staffCards: z
+      .object({
+        variant: z.enum(["compact", "profile"]),
+        showDescription: z.boolean(),
+        showRating: z.boolean(),
+      })
+      .strict(),
+    sectionOrder: z
+      .array(z.enum(["services", "staff", "gallery"]))
+      .length(3)
+      .refine((value) => new Set(value).size === 3, "Разделы не должны повторяться"),
+    galleryMediaIds: z.array(id).max(8).refine(
+      (value) => new Set(value).size === value.length,
+      "Изображения галереи не должны повторяться",
+    ),
   })
   .strict();
 export const service = z

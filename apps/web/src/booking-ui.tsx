@@ -206,6 +206,7 @@ export function BookingForm({
       setBusy(false);
     }
   }
+  const bookingStep = quote ? 3 : serviceId ? 2 : 1;
   return (
     <>
       <BackLink
@@ -228,6 +229,29 @@ export function BookingForm({
         }
         description="Выберите услугу и свободное время. Цена подтверждается сервером перед записью."
       />
+      <ol className="booking-progress" aria-label="Этапы записи">
+        {["Услуга и мастер", "Дата и время", "Подтверждение"].map(
+          (label, index) => {
+            const step = index + 1;
+            const state =
+              step < bookingStep
+                ? "complete"
+                : step === bookingStep
+                  ? "current"
+                  : "upcoming";
+            return (
+              <li
+                key={label}
+                className={state}
+                aria-current={state === "current" ? "step" : undefined}
+              >
+                <span>{state === "complete" ? "✓" : step}</span>
+                <small>{label}</small>
+              </li>
+            );
+          },
+        )}
+      </ol>
       <div className="booking-layout">
         <section className="panel">
           <div className="step-title">

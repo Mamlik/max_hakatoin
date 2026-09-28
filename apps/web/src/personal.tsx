@@ -6,8 +6,11 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { api, useApi, useAuth, refreshData, currentSession } from "./api";
+import { normalizeStyle } from "./storefront-style";
+import { storefrontTokenStyle } from "./storefront-tokens";
 import {
   PageTitle,
+  Modal,
   Icon,
   Empty,
   Load,
@@ -34,7 +37,6 @@ import type {
   Event,
   Voucher,
   Revocation,
-  Style,
   Media,
 } from "./types";
 export { BookingForm, BookingPage } from "./booking-ui";
@@ -355,12 +357,14 @@ export function Asset({
   privateAsset = false,
   className = "",
   alt = "",
+  style,
 }: {
   tenantId: string;
   media?: Media;
   privateAsset?: boolean;
   className?: string;
   alt?: string;
+  style?: CSSProperties;
 }) {
   const [url, setUrl] = useState("");
   useEffect(() => {
@@ -391,7 +395,9 @@ export function Asset({
       if (local) URL.revokeObjectURL(local);
     };
   }, [tenantId, media?.id, privateAsset]);
-  return url ? <img src={url} className={className} alt={alt} /> : null;
+  return url ? (
+    <img src={url} className={className} alt={alt} style={style} />
+  ) : null;
 }
 export function StorefrontView({
   salon: s,
@@ -402,10 +408,144 @@ export function StorefrontView({
   catalog?: Catalog;
   preview?: boolean;
 }) {
-  const theme = s.style ?? s.draftStyle;
-  const accent = theme?.accent ?? "violet";
+  const auth = useAuth();
+  const theme = normalizeStyle(s.style ?? s.draftStyle);
+  const [galleryOpen, setGalleryOpen] = useState<number | null>(null);
+  const useV2 = auth.storefrontThemesV2;
+  const accent = theme.accent;
+  const section = {
+    services: catalog ? (
+      <section className="storefront-section" key="services">
+        <div className="section-head">
+          <h2>Услуги</h2>
+          <span className="muted">Оплата в салоне</span>
+        </div>
+        <div className={`service-list service-list-${useV2 ? theme.serviceCards.variant : "compact"}`}>
+          {[...catalog.services]
+            .sort((a, b) => {
+              const order = theme.categoryOrder;
+              return (
+                order.indexOf(a.categoryId ?? "") -
+                order.indexOf(b.categoryId ?? "")
+              );
+            })
+            .map((service) => (
+              <article className="service-row" key={service.id}>
+                {service.coverMediaId ? (
+                  <Asset
+                    tenantId={s.id}
+                    media={s.media?.find(
+                      (media) => media.id === service.coverMediaId,
+                    )}
+                    className="service-cover"
+                    alt={`Обложка услуги «${service.name}»`}
+                  />
+                ) : (
+                  <span className="service-cover media-fallback" aria-hidden="true">
+                    {service.name.charAt(0)}
+                  </span>
+                )}
+                <div className="service-copy">
+                  <h3>{service.name}</h3>
+                  {(!useV2 || theme.serviceCards.showDescription) &&
+                    service.description && <p>{service.description}</p>}
+                  <small>{service.durationMin} минут</small>
+                </div>
+                <div className="service-action">
+                  <strong>{money(service.priceMinor)}</strong>
+                  {!preview && (
+                    <Link
+                      className="button secondary compact"
+                      to={`/s/${s.publicCode}/book?service=${service.id}`}
+                    >
+                      Выбрать
+                    </Link>
+                  )}
+                </div>
+              </article>
+            ))}
+        </div>
+      </section>
+    ) : null,
+    staff: catalog ? (
+      <section className="storefront-section" key="staff">
+        <div className="section-head">
+          <h2>Наши мастера</h2>
+        </div>
+        <div className={`staff-grid staff-grid-${useV2 ? theme.staffCards.variant : "compact"}`}>
+          {catalog.staff.map((staffMember, index) => (
+            <article className="staff-card" key={staffMember.id}>
+              <div className={`staff-avatar tone-${index % 3}`}>
+                {staffMember.photoMediaId ? (
+                  <Asset
+                    tenantId={s.id}
+                    media={s.media?.find(
+                      (media) => media.id === staffMember.photoMediaId,
+                    )}
+                    alt={`Фото ${staffMember.name}`}
+                  />
+                ) : (
+                  staffMember.name.charAt(0)
+                )}
+              </div>
+              <div className="staff-card-copy">
+                <h3>{staffMember.name}</h3>
+                {(!useV2 || theme.staffCards.showRating) &&
+                  staffMember.ratingAverage != null &&
+                  staffMember.ratingCount != null && (
+                    <div
+                      className="staff-rating"
+                      aria-label={`Рейтинг ${staffMember.ratingAverage} из 5, ${staffMember.ratingCount} оценок`}
+                    >
+                      ★ {staffMember.ratingAverage.toLocaleString("ru-RU")} ·{" "}
+                      {plural(
+                        staffMember.ratingCount,
+                        "оценка",
+                        "оценки",
+                        "оценок",
+                      )}
+                    </div>
+                  )}
+                {(!useV2 || theme.staffCards.showDescription) &&
+                  staffMember.description && <p>{staffMember.description}</p>}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    ) : null,
+    gallery:
+      useV2 && theme.galleryMediaIds.length ? (
+        <section className="storefront-section" key="gallery">
+          <div className="section-head">
+            <h2>Галерея</h2>
+            <span className="muted">{theme.galleryMediaIds.length} фото</span>
+          </div>
+          <div className="storefront-gallery">
+            {theme.galleryMediaIds.map((id, index) => (
+              <button
+                type="button"
+                key={id}
+                aria-label={`Открыть фото салона ${index + 1}`}
+                onClick={() => !preview && setGalleryOpen(index)}
+              >
+                <Asset
+                  tenantId={s.id}
+                  media={s.media?.find((media) => media.id === id)}
+                  privateAsset={preview}
+                  alt={`Фото салона ${index + 1}`}
+                />
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null,
+  };
   return (
-    <div className={`storefront accent-${accent}`}>
+    <div
+      className={`storefront accent-${accent} ${useV2 ? `storefront-v2 theme-${theme.themePreset} mode-${theme.colorMode}` : "storefront-legacy"}`}
+      style={useV2 ? storefrontTokenStyle(theme.colorMode, theme.accent) : undefined}
+    >
       <div className="storefront-cover">
         <Asset
           tenantId={s.id}
@@ -413,6 +553,9 @@ export function StorefrontView({
           privateAsset={preview}
           className="cover-image"
           alt="Обложка салона"
+          style={{
+            objectPosition: `${theme.coverFocalPoint.x}% ${theme.coverFocalPoint.y}%`,
+          }}
         />
         <span className="cover-word">{s.name.split(" ·")[0]}</span>
         <span className="cover-flower" aria-hidden="true">
@@ -434,10 +577,14 @@ export function StorefrontView({
           <h1>{s.name}</h1>
           <p>{s.address}</p>
         </div>
-        {!preview && (
+        {!preview ? (
           <Link className="button primary" to={`/s/${s.publicCode}/book`}>
             Записаться <Icon name="arrow" size={16} />
           </Link>
+        ) : (
+          <span className="button primary preview-cta" aria-hidden="true">
+            Записаться <Icon name="arrow" size={16} />
+          </span>
         )}
       </div>
       <p className="salon-description">{theme?.description}</p>
@@ -445,76 +592,42 @@ export function StorefrontView({
         <span>✦ {s.contact}</span>
         <span>Часовой пояс: {timezoneLabel(s.timezone)}</span>
       </div>
-      {catalog && (
-        <>
-          <div className="section-head">
-            <h2>Услуги</h2>
-            <span className="muted">Оплата в салоне</span>
+      {catalog &&
+        (useV2 ? theme.sectionOrder : ["services", "staff"]).map(
+          (name) => section[name as keyof typeof section],
+        )}
+      {galleryOpen !== null && theme.galleryMediaIds[galleryOpen] && (
+        <Modal title={`Фото ${galleryOpen + 1} из ${theme.galleryMediaIds.length}`} onClose={() => setGalleryOpen(null)}>
+          <div className="storefront-lightbox">
+            <Asset
+              tenantId={s.id}
+              media={s.media?.find(
+                (media) => media.id === theme.galleryMediaIds[galleryOpen],
+              )}
+              alt={`Фото салона ${galleryOpen + 1}`}
+            />
+            <div className="inline-actions">
+              <button
+                className="button secondary"
+                disabled={galleryOpen === 0}
+                onClick={() => setGalleryOpen((current) => Math.max(0, (current ?? 0) - 1))}
+              >
+                Назад
+              </button>
+              <button
+                className="button secondary"
+                disabled={galleryOpen === theme.galleryMediaIds.length - 1}
+                onClick={() =>
+                  setGalleryOpen((current) =>
+                    Math.min(theme.galleryMediaIds.length - 1, (current ?? 0) + 1),
+                  )
+                }
+              >
+                Далее
+              </button>
+            </div>
           </div>
-          <div className="service-list">
-            {[...catalog.services]
-              .sort((a, b) => {
-                const order = theme.categoryOrder ?? [];
-                return (
-                  order.indexOf(a.categoryId ?? "") -
-                  order.indexOf(b.categoryId ?? "")
-                );
-              })
-              .map((v) => (
-                <div className="service-row" key={v.id}>
-                  {v.coverMediaId && (
-                    <Asset
-                      tenantId={s.id}
-                      media={s.media?.find((m) => m.id === v.coverMediaId)}
-                      className="service-cover"
-                      alt={`Обложка услуги «${v.name}»`}
-                    />
-                  )}
-                  <div>
-                    <h3>{v.name}</h3>
-                    <p>{v.description}</p>
-                    <small>{v.durationMin} минут</small>
-                  </div>
-                  <div>
-                    <strong>{money(v.priceMinor)}</strong>
-                    {!preview && (
-                      <Link
-                        className="button secondary compact"
-                        to={`/s/${s.publicCode}/book?service=${v.id}`}
-                      >
-                        Выбрать
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              ))}
-          </div>
-          <h2>Ваши мастера</h2>
-          <div className="staff-grid">
-            {catalog.staff.map((st, i) => (
-              <div className="staff-card" key={st.id}>
-                <div className={`staff-avatar tone-${i % 3}`}>
-                  {st.photoMediaId ? (
-                    <Asset
-                      tenantId={s.id}
-                      media={s.media?.find((m) => m.id === st.photoMediaId)}
-                      alt={`Фото ${st.name}`}
-                    />
-                  ) : (
-                    st.name.charAt(0)
-                  )}
-                </div>
-                <h3>{st.name}</h3>
-                {st.ratingAverage != null && st.ratingCount != null && (
-                  <div className="staff-rating" aria-label={`Рейтинг ${st.ratingAverage} из 5, ${st.ratingCount} оценок`}>
-                    ★ {st.ratingAverage.toLocaleString("ru-RU")} · {plural(st.ratingCount, "оценка", "оценки", "оценок")}
-                  </div>
-                )}
-                <p>{st.description}</p>
-              </div>
-            ))}
-          </div>
-        </>
+        </Modal>
       )}
     </div>
   );

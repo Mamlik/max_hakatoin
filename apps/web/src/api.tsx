@@ -163,6 +163,7 @@ interface AuthContextValue {
   error: string;
   demo: boolean;
   botName: string;
+  storefrontThemesV2: boolean;
   login: (persona: string) => Promise<void>;
   logout: () => void;
   reload: () => Promise<void>;
@@ -195,6 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [error, setError] = useState(""),
     [demo, setDemo] = useState(false),
     [botName, setBotName] = useState(""),
+    [storefrontThemesV2, setStorefrontThemesV2] = useState(false),
     [launchPath, setLaunchPath] = useState<string | null>(null);
   const reload = useCallback(async () => {
     if (session) setMe(await api<Me>("/me"));
@@ -231,10 +233,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         // One failed /config used to leave the app on a dead-end screen with no way
         // back: no persona list in demo, and "Откройте приложение в MAX" in production.
-        let cfg: { demo: boolean; botName: string } | undefined;
+        let cfg:
+          | {
+              demo: boolean;
+              botName: string;
+              storefrontThemesV2: boolean;
+            }
+          | undefined;
         for (let attempt = 0; attempt < 3 && active; attempt++) {
           try {
-            cfg = await api<{ demo: boolean; botName: string }>("/config");
+            cfg = await api<{
+              demo: boolean;
+              botName: string;
+              storefrontThemesV2: boolean;
+            }>("/config");
             break;
           } catch (cause) {
             if (attempt === 2) throw cause;
@@ -244,6 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!active || !cfg) return;
         setDemo(cfg.demo);
         setBotName(cfg.botName);
+        setStorefrontThemesV2(cfg.storefrontThemesV2);
         await new Promise((r) => setTimeout(r, 150));
         const params = new URLSearchParams(window.location.hash.slice(1));
         const query = new URLSearchParams(window.location.search);
@@ -303,6 +316,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error,
         demo,
         botName,
+        storefrontThemesV2,
         login,
         logout,
         reload,

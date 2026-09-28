@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, refreshData } from "./api";
 export const money = (n?: number | null) =>
@@ -162,6 +162,11 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
       <>
         <circle cx="10" cy="10" r="6" />
         <path d="m15 15 5 5" />
+      </>
+    ),
+    menu: (
+      <>
+        <path d="M5 7h14M5 12h14M5 17h14" />
       </>
     ),
   };
@@ -350,6 +355,41 @@ export function Modal({
   children: ReactNode;
   onClose: () => void;
 }) {
+  const dialog = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const element = dialog.current;
+    const focusable = () =>
+      Array.from(
+        element?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    focusable()[0]?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0]!;
+      const last = items.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      opener?.focus();
+    };
+  }, [onClose]);
   return (
     <div
       className="modal-backdrop"
@@ -358,6 +398,7 @@ export function Modal({
       }}
     >
       <section
+        ref={dialog}
         className="modal"
         role="dialog"
         aria-modal="true"

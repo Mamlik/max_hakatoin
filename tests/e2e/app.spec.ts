@@ -1,9 +1,32 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 );
+
+async function clickNav(page: Page, name: string) {
+  const mobile = (await page.viewportSize())!.width < 900;
+  if (!mobile) {
+    await expect(page.locator(".desktop-nav")).toBeVisible();
+    await page
+      .locator(".desktop-nav")
+      .getByRole("link", { name, exact: true })
+      .click();
+    return;
+  }
+  await expect(page.locator(".mobile-nav")).toBeVisible();
+  const primary = page.locator(".mobile-nav a.nav-item").filter({ hasText: name });
+  if (await primary.count()) {
+    await primary.click();
+    return;
+  }
+  await page.getByRole("button", { name: "Ещё", exact: true }).click();
+  await page
+    .locator(".mobile-more-sheet")
+    .getByRole("link", { name, exact: true })
+    .click();
+}
 
 test("client sees loyalty progress and can calculate an appointment", async ({
   page,
@@ -14,7 +37,7 @@ test("client sees loyalty progress and can calculate an appointment", async ({
       name: "Клиент Записаться, перенести визит, получить купон",
     })
     .click();
-  await page.getByRole("link", { name: "Лояльность", exact: true }).click();
+  await clickNav(page, "Лояльность");
   await expect(
     page.getByRole("heading", { name: "Бесплатные посещения", exact: true }),
   ).toBeVisible();
@@ -95,7 +118,7 @@ test("owner can view loyalty settings and customer progress", async ({
     .filter({ hasText: "Линия" })
     .getAttribute("value");
   await workspace.selectOption(option!);
-  await page.getByRole("link", { name: "Лояльность", exact: true }).click();
+  await clickNav(page, "Лояльность");
   await expect(
     page.getByRole("heading", { name: "Программа лояльности", exact: true }),
   ).toBeVisible();
@@ -109,7 +132,7 @@ test("owner can view loyalty settings and customer progress", async ({
     path: `test-results/loyalty-settings-${test.info().project.name}.png`,
     fullPage: true,
   });
-  await page.getByRole("link", { name: "Клиенты", exact: true }).click();
+  await clickNav(page, "Клиенты");
   await page.getByRole("link").filter({ hasText: "Анна" }).first().click();
   await expect(
     page.getByRole("heading", { name: "Лояльность клиента", exact: true }),
@@ -156,11 +179,11 @@ test("client and owner can open Live Window screens", async ({ page }) => {
       name: "Клиент Записаться, перенести визит, получить купон",
     })
     .click();
-  await page.getByRole("link", { name: "Живое окно", exact: true }).click();
+  await clickNav(page, "Живое окно");
   await expect(
     page.getByRole("heading", { name: "Ожидаем удобное время" }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Салоны", exact: true }).click();
+  await clickNav(page, "Салоны");
   await page.locator("a.salon-card").first().click();
   await page.getByRole("link", { name: /Записаться/ }).first().click();
   await page.getByLabel("Услуга").selectOption({ index: 1 });
@@ -199,7 +222,7 @@ test("client and owner can open Live Window screens", async ({ page }) => {
     .filter({ hasText: "Линия" })
     .getAttribute("value");
   await workspace.selectOption(option!);
-  await page.getByRole("link", { name: "Живое окно", exact: true }).click();
+  await clickNav(page, "Живое окно");
   await expect(page.getByRole("heading", { name: "Живое окно" })).toBeVisible();
   await expect(
     page.getByText(/предложения отправляются автоматически/i),
@@ -221,10 +244,7 @@ test("a service nobody provides is flagged to the owner", async ({ page }) => {
     .filter({ hasText: "Линия" })
     .getAttribute("value");
   await workspace.selectOption(option!);
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Услуги и мастера", exact: true })
-    .click();
+  await clickNav(page, "Услуги и мастера");
 
   const covered = page
     .locator(".service-row")
@@ -265,10 +285,11 @@ test("salon media and friendly timezones reach the published storefront", async 
     .filter({ hasText: "Линия" })
     .getAttribute("value");
   await workspace.selectOption(option!);
-  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await clickNav(page, "Настройки");
 
   const timezone = page.getByRole("radiogroup", { name: "Часовой пояс" });
   await expect(timezone.getByText("МСК+2", { exact: true })).toBeVisible();
+  await page.getByRole("radio", { name: /С фото/ }).check();
 
   const files = page.locator('input[type="file"]');
   await files.nth(0).setInputFiles({
@@ -284,13 +305,15 @@ test("salon media and friendly timezones reach the published storefront", async 
   });
   await expect(page.getByText("Обложка выбрана", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Сохранить черновик" }).click();
-  await expect(page.getByText("Черновик сохранён", { exact: true })).toBeVisible();
-  await page
-    .getByRole("button", { name: "Опубликовать сохранённое оформление" })
-    .click();
-  await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".notice.success").filter({ hasText: "Черновик сохранён" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Опубликовать", exact: true }).click();
+  await expect(
+    page.getByText("Оформление опубликовано", { exact: true }),
+  ).toBeVisible();
 
-  await page.getByRole("link", { name: "Услуги и мастера", exact: true }).click();
+  await clickNav(page, "Услуги и мастера");
   const service = page.locator(".service-row").filter({ hasText: "Стрижка и укладка" });
   await service.getByRole("button", { name: "Изменить" }).click();
   let dialog = page.getByRole("dialog", { name: "Изменить услугу" });
@@ -313,13 +336,17 @@ test("salon media and friendly timezones reach the published storefront", async 
   await dialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(master.locator(".staff-avatar img")).toBeVisible();
 
-  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await clickNav(page, "Настройки");
   await page.getByRole("link", { name: "Открыть витрину" }).click();
   await expect(page.getByAltText("Обложка салона")).toBeVisible();
   await expect(page.getByAltText("Логотип")).toBeVisible();
   await expect(page.getByAltText("Обложка услуги «Стрижка и укладка»")).toBeVisible();
   await expect(page.getByAltText("Фото Александр")).toBeVisible();
   await expect(page.getByText(/Часовой пояс: МСК · Москва/)).toBeVisible();
+  await page.screenshot({
+    path: `.local/ui-audit-stage6/storefront-${test.info().project.name}.png`,
+    fullPage: true,
+  });
 
   const saveSalon = page.getByRole("button", { name: "Сохранить", exact: true });
   if (await saveSalon.isVisible()) {
@@ -336,6 +363,89 @@ test("salon media and friendly timezones reach the published storefront", async 
     path: `test-results/catalog-media-${test.info().project.name}.png`,
     fullPage: true,
   });
+});
+
+test("owner previews safe storefront themes and card variants", async ({
+  page,
+}, testInfo) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  await page.goto("/");
+  await page.getByRole("button", { name: /Владелец · Линия/ }).click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  await clickNav(page, "Настройки");
+
+  await page.getByRole("radio", { name: /Редакция/ }).check();
+  await page.getByRole("radio", { name: /Тёмный/ }).check();
+  await page.getByRole("radio", { name: /С фото/ }).check();
+  await page.getByRole("radio", { name: /Расширенные/ }).check();
+  await expect(page.getByText("Есть несохранённые изменения")).toBeVisible();
+
+  if (testInfo.project.name === "mobile") {
+    await page.getByRole("button", { name: "Предпросмотр", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Предпросмотр витрины" })).toBeVisible();
+    await expect(page.locator(".modal .storefront.theme-editorial.mode-dark")).toBeVisible();
+    await page.screenshot({
+      path: `.local/ui-audit-stage6/owner-editor-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Закрыть" }).click();
+    await page.getByRole("button", { name: "Ещё" }).click();
+    await expect(page.getByLabel("Ещё")).toBeVisible();
+  } else {
+    await expect(
+      page.locator(".storefront-editor-preview .storefront.theme-editorial.mode-dark"),
+    ).toBeVisible();
+    await page.screenshot({
+      path: `.local/ui-audit-stage6/owner-editor-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  }
+
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  expect(browserErrors).toEqual([]);
+});
+
+test("published storefront stays usable at supported responsive widths", async ({
+  page,
+  request,
+}) => {
+  const issued = await request.post("/api/v1/demo/identity", {
+    data: { persona: "client" },
+  });
+  expect(issued.ok(), await issued.text()).toBeTruthy();
+  const { data } = await issued.json();
+  const launch = `/#WebAppData=${encodeURIComponent(data.initData)}&startapp=s_line`;
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: width <= 390 ? 844 : 900 });
+    await page.goto(launch);
+    await expect(page).toHaveURL(/\/s\/line$/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const cta = page.getByRole("link", { name: /Записаться/ }).first();
+    await expect(cta).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    if (width === 390) {
+      const ctaBox = await cta.boundingBox();
+      expect(ctaBox).not.toBeNull();
+      expect(ctaBox!.y + ctaBox!.height).toBeLessThanOrEqual(844);
+    }
+  }
 });
 
 test("MAX back closes the Android mini-app at the root screen", async ({

@@ -33,11 +33,26 @@ export interface Tenant {
   version: number;
 }
 export interface Style {
+  schemaVersion?: 2;
   accent: string;
   description: string;
   logoMediaId?: string | null;
   coverMediaId?: string | null;
   categoryOrder: string[];
+  themePreset?: "studio" | "editorial" | "noir";
+  colorMode?: "light" | "dark";
+  coverFocalPoint?: { x: number; y: number };
+  serviceCards?: {
+    variant: "compact" | "media";
+    showDescription: boolean;
+  };
+  staffCards?: {
+    variant: "compact" | "profile";
+    showDescription: boolean;
+    showRating: boolean;
+  };
+  sectionOrder?: Array<"services" | "staff" | "gallery">;
+  galleryMediaIds?: string[];
 }
 export interface Service {
   id: string;

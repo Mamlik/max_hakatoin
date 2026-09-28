@@ -98,7 +98,7 @@
 
 ## 6. Модель настроек
 
-Хранение остаётся в существующих JSONB `tenants.draft_style` и `tenants.published_style`. SQL-миграция не требуется. Контракт расширяется обратно совместимо; чтение старой структуры проходит через единый `normalizeStyle` и получает defaults.
+Хранение остаётся в существующих JSONB `tenants.draft_style` и `tenants.published_style`. Для самой структуры JSONB SQL-миграция не требуется; аддитивная миграция расширяет существующий `media_assets_purpose_check` значением `gallery`. Контракт расширяется обратно совместимо; чтение старой структуры проходит через единый `normalizeStyle` и получает defaults.
 
 ```ts
 type StorefrontStyleV2 = {
