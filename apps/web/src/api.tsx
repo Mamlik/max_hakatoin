@@ -174,10 +174,12 @@ declare global {
   interface Window {
     WebApp?: {
       initData: string;
+      platform?: "ios" | "android" | "desktop" | "web" | string;
       // MAX delivers the ?startapp= payload here; the signed initData may not carry it.
       initDataUnsafe?: { start_param?: unknown };
       ready: () => void;
       expand?: () => void;
+      close?: () => void;
       BackButton?: {
         show: () => void;
         hide: () => void;

@@ -22,6 +22,8 @@ import {
   BackLink,
   CommandButton,
   plural,
+  TimezonePicker,
+  timezoneLabel,
 } from "./ui";
 import type {
   Booking,
@@ -84,6 +86,14 @@ export function BookingCard({
           мин
         </p>
         <Badge status={b.status} />
+        {!work && b.reviewStatus === "active" && b.reviewRating && (
+          <span className="booking-rating" aria-label={`Оценка ${b.reviewRating} из 5`}>
+            ★ {b.reviewRating}/5
+          </span>
+        )}
+        {!work && b.canReview && !b.reviewRating && (
+          <span className="booking-rating pending">Оценить мастера</span>
+        )}
       </div>
       <div className="booking-card-end">
         {b.totalMinor !== undefined && <strong>{money(b.totalMinor)}</strong>}
@@ -239,11 +249,26 @@ export function SalonCard({ salon: s }: { salon: Salon }) {
       className={`salon-card accent-${style?.accent ?? "violet"}`}
     >
       <div className="salon-cover">
+        <Asset
+          tenantId={s.id}
+          media={s.media?.find((m) => m.id === style?.coverMediaId)}
+          className="cover-image"
+          alt=""
+        />
         <span className="salon-monogram">{s.name.split(" ·")[0]}</span>
         <span className="salon-symbol">✳</span>
         <span className="category-chip">{s.category ?? "Ваш салон"}</span>
       </div>
       <div className="salon-card-info">
+        {style?.logoMediaId && (
+          <span className="salon-card-logo">
+            <Asset
+              tenantId={s.id}
+              media={s.media?.find((m) => m.id === style.logoMediaId)}
+              alt=""
+            />
+          </span>
+        )}
         <div>
           <h3>{s.name}</h3>
           <p>{s.address ?? "Откройте витрину салона"}</p>
@@ -418,7 +443,7 @@ export function StorefrontView({
       <p className="salon-description">{theme?.description}</p>
       <div className="contact-line">
         <span>✦ {s.contact}</span>
-        <span>Часовой пояс: {s.timezone}</span>
+        <span>Часовой пояс: {timezoneLabel(s.timezone)}</span>
       </div>
       {catalog && (
         <>
@@ -437,6 +462,14 @@ export function StorefrontView({
               })
               .map((v) => (
                 <div className="service-row" key={v.id}>
+                  {v.coverMediaId && (
+                    <Asset
+                      tenantId={s.id}
+                      media={s.media?.find((m) => m.id === v.coverMediaId)}
+                      className="service-cover"
+                      alt={`Обложка услуги «${v.name}»`}
+                    />
+                  )}
                   <div>
                     <h3>{v.name}</h3>
                     <p>{v.description}</p>
@@ -461,9 +494,22 @@ export function StorefrontView({
             {catalog.staff.map((st, i) => (
               <div className="staff-card" key={st.id}>
                 <div className={`staff-avatar tone-${i % 3}`}>
-                  {st.name.charAt(0)}
+                  {st.photoMediaId ? (
+                    <Asset
+                      tenantId={s.id}
+                      media={s.media?.find((m) => m.id === st.photoMediaId)}
+                      alt={`Фото ${st.name}`}
+                    />
+                  ) : (
+                    st.name.charAt(0)
+                  )}
                 </div>
                 <h3>{st.name}</h3>
+                {st.ratingAverage != null && st.ratingCount != null && (
+                  <div className="staff-rating" aria-label={`Рейтинг ${st.ratingAverage} из 5, ${st.ratingCount} оценок`}>
+                    ★ {st.ratingAverage.toLocaleString("ru-RU")} · {plural(st.ratingCount, "оценка", "оценки", "оценок")}
+                  </div>
+                )}
                 <p>{st.description}</p>
               </div>
             ))}
@@ -926,20 +972,16 @@ export function CreateSalonPage() {
             },
             { name: "address", label: "Адрес или место оказания услуг" },
             { name: "contact", label: "Публичный способ связи" },
-            {
-              name: "timezone",
-              label: "Часовой пояс IANA",
-              hint: "Europe/Moscow, Asia/Yekaterinburg, Asia/Novosibirsk",
-            },
           ]}
-          initial={{ timezone: "Europe/Moscow" }}
           submit="Создать пространство"
           onSubmit={async (v) => {
             const t = await api<Salon>("/tenants", "POST", v);
             await auth.reload();
             navigate(`/work/${t.id}/settings`);
           }}
-        />
+        >
+          <TimezonePicker />
+        </SimpleForm>
       </section>
     </>
   );

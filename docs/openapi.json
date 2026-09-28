@@ -15,7 +15,7 @@
   "paths": {
     "/api/v1/auth/max": {
       "post": {
-        "summary": "Проверка подписи MAX и создание часовой сессии",
+        "summary": "Проверка подписи MAX и создание сессии со скользящим сроком",
         "security": [],
         "parameters": [],
         "requestBody": {
@@ -2051,6 +2051,134 @@
         }
       }
     },
+    "/api/v1/work/{t}/my-staff-profile": {
+      "get": {
+        "summary": "Профиль текущего мастера",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Обновить фотографию текущего мастера",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "photoMediaId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "photoMediaId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
     "/api/v1/work/{t}/categories": {
       "get": {
         "summary": "Категории услуг",
@@ -2374,6 +2502,18 @@
                     "minimum": 0,
                     "maximum": 100000000
                   },
+                  "coverMediaId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "active": {
                     "default": true,
                     "type": "boolean"
@@ -2488,6 +2628,18 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 100000000
+                  },
+                  "coverMediaId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "active": {
                     "default": true,
@@ -2703,6 +2855,18 @@
                     "type": "string",
                     "maxLength": 2000
                   },
+                  "photoMediaId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "active": {
                     "default": true,
                     "type": "boolean"
@@ -2794,15 +2958,6 @@
                     "type": "string",
                     "maxLength": 2000
                   },
-                  "active": {
-                    "default": true,
-                    "type": "boolean"
-                  },
-                  "expectedVersion": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
                   "photoMediaId": {
                     "anyOf": [
                       {
@@ -2814,6 +2969,15 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "active": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
@@ -8854,6 +9018,1514 @@
                   "serviceId",
                   "visitsRequired",
                   "enabled",
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/waitlist-requests": {
+      "get": {
+        "summary": "Собственные запросы ожидания Live Window",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      },
+      "post": {
+        "summary": "Создать запрос ожидания после повторной проверки обычных слотов",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "tenantId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "serviceId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "staffIds": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "linkedBookingId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dateFrom": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "dateTo": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "weekdays": {
+                    "minItems": 1,
+                    "maxItems": 7,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 7
+                    }
+                  },
+                  "dailyStartLocal": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "dailyEndLocal": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "minimumNoticeMinutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10080
+                  },
+                  "consentVersion": {
+                    "type": "string",
+                    "const": "live-window-v1"
+                  },
+                  "consentSource": {
+                    "default": "mini_app",
+                    "type": "string",
+                    "const": "mini_app"
+                  }
+                },
+                "required": [
+                  "tenantId",
+                  "serviceId",
+                  "dateFrom",
+                  "dateTo",
+                  "weekdays",
+                  "dailyStartLocal",
+                  "dailyEndLocal",
+                  "minimumNoticeMinutes",
+                  "consentVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/waitlist-requests/{id}": {
+      "get": {
+        "summary": "Собственный запрос ожидания",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Изменить условия запроса ожидания",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "staffIds": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "dateFrom": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "dateTo": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "weekdays": {
+                    "minItems": 1,
+                    "maxItems": 7,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 7
+                    }
+                  },
+                  "dailyStartLocal": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "dailyEndLocal": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "minimumNoticeMinutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10080
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/work/{t}/live-window/pause": {
+      "post": {
+        "summary": "Поставить автоматические предложения на операционную паузу",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/work/{t}/live-window/resume": {
+      "post": {
+        "summary": "Снять операционную паузу Live Window",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/waitlist-requests/{id}/pause": {
+      "post": {
+        "summary": "pause запроса ожидания",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/waitlist-requests/{id}/resume": {
+      "post": {
+        "summary": "resume запроса ожидания",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/waitlist-requests/{id}/cancel": {
+      "post": {
+        "summary": "cancel запроса ожидания",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/live-window-offers": {
+      "get": {
+        "summary": "Собственные предложения Live Window",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/live-window-offers/{id}": {
+      "get": {
+        "summary": "Собственное предложение Live Window",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/live-window-offers/{id}/accept": {
+      "post": {
+        "summary": "Атомарно принять предложение Live Window",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "confirmedTermsVersion": {
+                    "type": "string",
+                    "const": "booking-p0-v1"
+                  },
+                  "confirmOverlap": {
+                    "type": "boolean"
+                  },
+                  "overlapChallengeToken": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "removeVoucher": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "confirmedTermsVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/live-window-offers/{id}/decline": {
+      "post": {
+        "summary": "Отклонить предложение и продолжить FIFO",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "stopRequest": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/work/{t}/live-window/settings": {
+      "get": {
+        "summary": "Настройки Live Window салона",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Включить и настроить Live Window",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "paused": {
+                    "type": "boolean"
+                  },
+                  "pauseReason": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "offerTtlMinutes": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 30
+                  },
+                  "minimumNoticeMinutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10080
+                  },
+                  "quietStart": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "quietEnd": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "enabled",
+                  "paused",
+                  "offerTtlMinutes",
+                  "minimumNoticeMinutes",
+                  "quietStart",
+                  "quietEnd"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/work/{t}/live-window/windows": {
+      "get": {
+        "summary": "Окна и обезличенная цепочка предложений",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/work/{t}/live-window/windows/{id}": {
+      "get": {
+        "summary": "Одно Live Window и обезличенная цепочка предложений",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/work/{t}/live-window/windows/{id}/close": {
+      "post": {
+        "summary": "Закрыть конкретное Live Window",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/work/{t}/live-window/summary": {
+      "get": {
+        "summary": "Агрегированные метрики Live Window",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "t",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      }
+    },
+    "/api/v1/me/bookings/{b}/review": {
+      "post": {
+        "summary": "Оценить мастера после завершённого визита",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "b",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "rating": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  }
+                },
+                "required": [
+                  "rating"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный результат в data/meta"
+          },
+          "201": {
+            "description": "Команда выполнена"
+          },
+          "401": {
+            "description": "Требуется MAX вход"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "404": {
+            "description": "Объект недоступен"
+          },
+          "409": {
+            "description": "Конфликт или требуется подтверждение"
+          },
+          "422": {
+            "description": "Ошибка входных данных"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Изменить собственную оценку завершённого визита",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "b",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "rating": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "rating",
                   "expectedVersion"
                 ],
                 "additionalProperties": false

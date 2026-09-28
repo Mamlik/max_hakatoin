@@ -12,6 +12,7 @@ import {
   CommandButton,
   Modal,
   FilePick,
+  TimezonePicker,
 } from "./ui";
 import { StorefrontView } from "./personal";
 import { LinkBox } from "./work";
@@ -41,9 +42,14 @@ export function SettingsPage() {
     staff = useApi<Items<Staff>>(`/work/${t}/staff`),
     categories = useApi<Items<Category>>(`/work/${t}/categories`);
   const [style, setStyle] = useState<Style>(),
+    [storefrontVersion, setStorefrontVersion] = useState<number>(),
     [preview, setPreview] = useState(false);
   const a = useAction();
   useEffect(() => setStyle(draft.data?.draftStyle), [draft.data?.version]);
+  useEffect(
+    () => setStorefrontVersion(profile.data?.version),
+    [profile.data?.version],
+  );
   const member = auth.me!.memberships.find((m) => m.tenantId === t)!;
   const upload = async (purpose: "logo" | "cover", file?: File) => {
     if (!file) return;
@@ -141,7 +147,6 @@ export function SettingsPage() {
                         { name: "category", label: "Направление" },
                         { name: "address", label: "Адрес" },
                         { name: "contact", label: "Публичный контакт" },
-                        { name: "timezone", label: "Часовой пояс IANA" },
                       ]}
                       initial={{
                         name: salon.name,
@@ -157,7 +162,9 @@ export function SettingsPage() {
                         });
                         await auth.reload();
                       }}
-                    />
+                    >
+                      <TimezonePicker defaultValue={salon.timezone} />
+                    </SimpleForm>
                   </section>
                   <section className="panel">
                     <h2>Ссылка и QR</h2>
@@ -355,11 +362,18 @@ export function SettingsPage() {
                           disabled={a.busy}
                           onClick={() =>
                             void a.run(
-                              () =>
-                                api(`/work/${t}/storefront/draft`, "PUT", {
-                                  expectedVersion: salon.version,
-                                  style,
-                                }),
+                              async () => {
+                                const saved = await api<{ version: number }>(
+                                  `/work/${t}/storefront/draft`,
+                                  "PUT",
+                                  {
+                                    expectedVersion:
+                                      storefrontVersion ?? salon.version,
+                                    style,
+                                  },
+                                );
+                                setStorefrontVersion(saved.version);
+                              },
                               "Черновик сохранён",
                             )
                           }
@@ -374,7 +388,9 @@ export function SettingsPage() {
                         </button>
                         <CommandButton
                           path={`/work/${t}/storefront/publish`}
-                          body={{ expectedVersion: salon.version }}
+                          body={{
+                            expectedVersion: storefrontVersion ?? salon.version,
+                          }}
                           label="Опубликовать сохранённое оформление"
                         />
                       </div>

@@ -19,8 +19,9 @@ import {
   CommandButton,
   Icon,
   plural,
+  FilePick,
 } from "./ui";
-import { BookingCard } from "./personal";
+import { Asset, BookingCard } from "./personal";
 import type {
   Booking,
   Items,
@@ -31,8 +32,71 @@ import type {
   Schedule,
   Weekday,
   Interval,
+  Media,
 } from "./types";
 export { SettingsPage, AccessPage } from "./work-settings";
+
+function MasterPhotoCard({ tenantId }: { tenantId: string }) {
+  const profile = useApi<Staff>(`/work/${tenantId}/my-staff-profile`);
+  const action = useAction();
+  const upload = async (file?: File) => {
+    if (!file || !profile.data) return;
+    const form = new FormData();
+    form.append("purpose", "staff");
+    form.append("file", file);
+    await action.run(async () => {
+      const media = await api<Media>(
+        `/work/${tenantId}/media`,
+        "POST",
+        form,
+      );
+      await api(`/work/${tenantId}/my-staff-profile`, "PATCH", {
+        expectedVersion: profile.data!.version,
+        photoMediaId: media.id,
+      });
+    }, "Фотография профиля обновлена");
+  };
+  return (
+    <Load {...profile}>
+      {profile.data && (
+        <section className="panel master-profile-card">
+          <div className="staff-avatar">
+            {profile.data.photoMediaId ? (
+              <Asset
+                tenantId={tenantId}
+                media={{
+                  id: profile.data.photoMediaId,
+                  fileKey: "",
+                  purpose: "staff",
+                }}
+                privateAsset
+                alt={`Фото ${profile.data.name}`}
+              />
+            ) : (
+              profile.data.name.charAt(0)
+            )}
+          </div>
+          <div>
+            <h3>{profile.data.name}</h3>
+            <p>Эта фотография отображается клиентам в витрине салона.</p>
+            <div className="staff-rating">
+              {profile.data.ratingCount
+                ? `★ ${profile.data.ratingAverage?.toLocaleString("ru-RU")} · ${plural(profile.data.ratingCount, "оценка", "оценки", "оценок")}`
+                : "Пока нет оценок"}
+            </div>
+          </div>
+          <FilePick
+            accept="image/jpeg,image/png,image/webp"
+            disabled={action.busy}
+            label="Заменить фото"
+            onPick={(file) => void upload(file)}
+          />
+          {action.feedback}
+        </section>
+      )}
+    </Load>
+  );
+}
 
 export function WorkCalendar() {
   const { t } = useParams(),
@@ -69,6 +133,7 @@ export function WorkCalendar() {
           )
         }
       />
+      {role === "master" && <MasterPhotoCard tenantId={t!} />}
       <div className="stats-grid compact-stats">
         {[
           ["Всего визитов", stats?.length ?? "—"],
@@ -491,9 +556,22 @@ export function CatalogPage() {
     ),
     [selectedService, setSelectedService] = useState<Service>(),
     [selectedStaff, setSelectedStaff] = useState<Staff>(),
+    [serviceCover, setServiceCover] = useState<Media>(),
+    [staffPhoto, setStaffPhoto] = useState<Media>(),
     [assign, setAssign] = useState<Staff>();
   const [assignment, setAssignment] = useState<string[]>([]);
   const action = useAction();
+  const uploadImage = async (purpose: "service" | "staff", file?: File) => {
+    if (!file) return;
+    const form = new FormData();
+    form.append("purpose", purpose);
+    form.append("file", file);
+    await action.run(async () => {
+      const media = await api<Media>(`/work/${t}/media`, "POST", form);
+      if (purpose === "service") setServiceCover(media);
+      else setStaffPhoto(media);
+    }, "Изображение загружено. Сохраните карточку.");
+  };
   const fields = [
     { name: "name", label: "Название услуги" },
     {
@@ -524,6 +602,7 @@ export function CatalogPage() {
             className="button primary"
             onClick={() => {
               setSelectedService(undefined);
+              setServiceCover(undefined);
               setModal("service");
             }}
           >
@@ -535,6 +614,19 @@ export function CatalogPage() {
         <div className="service-list">
           {services.data?.items.map((s) => (
             <div className="service-row" key={s.id}>
+              {s.coverMediaId && (
+                <Asset
+                  tenantId={t!}
+                  media={{
+                    id: s.coverMediaId,
+                    fileKey: "",
+                    purpose: "service",
+                  }}
+                  privateAsset
+                  className="service-cover"
+                  alt={`Обложка услуги «${s.name}»`}
+                />
+              )}
               <div>
                 <h3>
                   {s.name} {!s.active && <Badge status="archived" />}
@@ -558,6 +650,11 @@ export function CatalogPage() {
                   className="button secondary compact"
                   onClick={() => {
                     setSelectedService(s);
+                    setServiceCover(
+                      s.coverMediaId
+                        ? { id: s.coverMediaId, fileKey: "", purpose: "service" }
+                        : undefined,
+                    );
                     setModal("service");
                   }}
                 >
@@ -594,6 +691,7 @@ export function CatalogPage() {
           className="button primary"
           onClick={() => {
             setSelectedStaff(undefined);
+            setStaffPhoto(undefined);
             setModal("staff");
           }}
         >
@@ -605,10 +703,24 @@ export function CatalogPage() {
           {staff.data?.items.map((s, i) => (
             <section className="panel staff-editor" key={s.id}>
               <div className={`staff-avatar tone-${i % 3}`}>
-                {s.name.charAt(0)}
+                {s.photoMediaId ? (
+                  <Asset
+                    tenantId={t!}
+                    media={{ id: s.photoMediaId, fileKey: "", purpose: "staff" }}
+                    privateAsset
+                    alt={`Фото ${s.name}`}
+                  />
+                ) : (
+                  s.name.charAt(0)
+                )}
               </div>
               <h3>{s.name}</h3>
               {!s.active && <Badge status="archived" />}
+              <div className="staff-rating">
+                {s.ratingCount
+                  ? `★ ${s.ratingAverage?.toLocaleString("ru-RU")} · ${plural(s.ratingCount, "оценка", "оценки", "оценок")}`
+                  : "Пока нет оценок"}
+              </div>
               <p>{s.description}</p>
               <small>{plural(s.serviceIds.length, "услуга", "услуги", "услуг")}</small>
               <div className="stack">
@@ -616,6 +728,11 @@ export function CatalogPage() {
                   className="button secondary"
                   onClick={() => {
                     setSelectedStaff(s);
+                    setStaffPhoto(
+                      s.photoMediaId
+                        ? { id: s.photoMediaId, fileKey: "", purpose: "staff" }
+                        : undefined,
+                    );
                     setModal("staff");
                   }}
                 >
@@ -687,6 +804,7 @@ export function CatalogPage() {
                   description: v.description ?? "",
                   durationMin: Number(v.durationMin),
                   priceMinor: Math.round(Number(v.price) * 100),
+                  coverMediaId: serviceCover?.id ?? null,
                   categoryId: v.categoryId || null,
                   active: v.active === "on",
                   ...(selectedService
@@ -701,6 +819,17 @@ export function CatalogPage() {
                 setModal(null);
               }}
             >
+              <Field
+                label="Обложка услуги"
+                hint="JPEG, PNG или WebP до 5 МБ. Показывается в витрине."
+              >
+                <FilePick
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={action.busy}
+                  label={serviceCover ? "Заменить обложку" : "Добавить обложку"}
+                  onPick={(file) => void uploadImage("service", file)}
+                />
+              </Field>
               <Field label="Категория">
                 <select
                   name="categoryId"
@@ -751,6 +880,7 @@ export function CatalogPage() {
                   {
                     name: v.name,
                     description: v.description ?? "",
+                    photoMediaId: staffPhoto?.id ?? null,
                     active: v.active === "on",
                     ...(selectedStaff
                       ? { expectedVersion: selectedStaff.version }
@@ -760,6 +890,17 @@ export function CatalogPage() {
                 setModal(null);
               }}
             >
+              <Field
+                label="Фотография мастера"
+                hint="Мастер также сможет заменить её в своём кабинете."
+              >
+                <FilePick
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={action.busy}
+                  label={staffPhoto ? "Заменить фотографию" : "Добавить фотографию"}
+                  onPick={(file) => void uploadImage("staff", file)}
+                />
+              </Field>
               <label className="check">
                 <input
                   type="checkbox"

@@ -57,6 +57,7 @@ export interface Service {
   description: string;
   durationMin: number;
   priceMinor: number;
+  coverMediaId: string | null;
   active: boolean;
   version: number;
 }
@@ -68,6 +69,9 @@ export interface Staff {
   version: number;
   serviceIds: string[];
   membershipId: string | null;
+  photoMediaId: string | null;
+  ratingAverage?: number | null;
+  ratingCount?: number | null;
 }
 export interface Category {
   id: string;
@@ -103,8 +107,24 @@ export interface Booking {
   appliedVoucherId?: string | null;
   loyaltyRewardId?: string | null;
   allowedActions: string[];
+  reviewRating?: number | null;
+  reviewStatus?: "active" | "invalidated" | null;
+  canReview?: boolean;
+  review?: VisitReview | null;
+  reviewEligibility?: { eligible: boolean; reason: string | null };
   history?: { version: number; reason: string | null; createdAt: string }[];
   deliveries?: { state: string; category: string; lastError: string | null }[];
+}
+export interface VisitReview {
+  id: string;
+  rating: number;
+  status: "active" | "invalidated";
+  version: number;
+  staffNameSnapshot: string;
+  tenantNameSnapshot: string;
+  createdAt: string;
+  updatedAt: string;
+  invalidatedReason: string | null;
 }
 export interface Slot {
   staffId: string;
@@ -232,6 +252,46 @@ export interface Interval {
 export interface Weekday {
   weekday: number;
   intervals: Interval[];
+}
+export interface WaitlistRequest {
+  id: string;
+  tenantId: string;
+  serviceId: string;
+  linkedBookingId: string | null;
+  dateFrom: string;
+  dateTo: string;
+  weekdays: number[];
+  dailyStartLocal: string;
+  dailyEndLocal: string;
+  minimumNoticeMinutes: number;
+  priorityAt: string;
+  status: string;
+  suspensionReason: string | null;
+  version: number;
+  staffIds: string[];
+  offer?: {
+    id: string;
+    status: string;
+    offeredAt: string | null;
+    expiresAt: string | null;
+    terminalReason: string | null;
+    version: number;
+  } | null;
+}
+export interface LiveWindowOffer {
+  id: string;
+  tenantId: string;
+  status: string;
+  version: number;
+  startAt: string;
+  endAt: string;
+  expiresAt: string | null;
+  tenantName: string;
+  serviceName: string;
+  staffName: string;
+  timezone: string;
+  linkedBookingId: string | null;
+  requestStatus: string;
 }
 export interface Schedule {
   staff: Staff;

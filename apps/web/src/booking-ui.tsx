@@ -390,6 +390,15 @@ export function BookingForm({
                   text="Попробуйте другой день или другого мастера."
                 />
               )}
+              {!work && selectedSalon && serviceId && (
+                <div className="hint-row">
+                  <Icon name="bell" />
+                  <span>Не нашли удобное время?</span>
+                  <Link to={`/me/waitlist/new?code=${encodeURIComponent(selectedSalon.publicCode)}&service=${serviceId}${staffId ? `&staff=${staffId}` : ""}`}>
+                    Сообщить, если освободится
+                  </Link>
+                </div>
+              )}
             </Load>
           ) : (
             <p className="muted">Сначала выберите услугу.</p>
@@ -507,6 +516,139 @@ export function BookingForm({
   );
 }
 
+const ratingLabels = [
+  "",
+  "Очень плохо",
+  "Плохо",
+  "Нормально",
+  "Хорошо",
+  "Отлично",
+];
+
+function VisitReviewPanel({
+  booking,
+  reload,
+}: {
+  booking: Booking;
+  reload: () => void;
+}) {
+  const review = booking.review;
+  const [rating, setRating] = useState(review?.rating ?? 0);
+  const [editing, setEditing] = useState(
+    !review || review.status !== "active",
+  );
+  const action = useAction();
+  useEffect(() => {
+    setRating(review?.rating ?? 0);
+    setEditing(!review || review.status !== "active");
+  }, [review?.id, review?.rating, review?.status, review?.version]);
+
+  if (booking.status !== "completed") {
+    if (review?.status !== "invalidated") return null;
+    return (
+      <div className="review-box">
+        <h3>Оценка мастера</h3>
+        <p className="muted">
+          Оценка больше не учитывается: статус визита изменён.
+        </p>
+      </div>
+    );
+  }
+
+  if (review?.status === "active" && !editing)
+    return (
+      <div className="review-box">
+        <span className="eyebrow">ВАША ОЦЕНКА МАСТЕРА</span>
+        <div
+          className="review-summary"
+          aria-label={`Оценка ${review.rating} из 5`}
+        >
+          <strong>
+            {"★".repeat(review.rating)}
+            {"☆".repeat(5 - review.rating)}
+          </strong>
+          <span>{ratingLabels[review.rating]}</span>
+        </div>
+        <button className="text-button" onClick={() => setEditing(true)}>
+          Изменить оценку
+        </button>
+      </div>
+    );
+
+  return (
+    <div className="review-box">
+      <span className="eyebrow">
+        {review?.status === "invalidated"
+          ? "ОЦЕНИТЕ СНОВА"
+          : "КАК ПРОШЁЛ ВИЗИТ?"}
+      </span>
+      <h3>Оцените работу мастера {booking.staffName}</h3>
+      {review?.status === "invalidated" && (
+        <p className="small muted">
+          Предыдущая оценка была отозвана после изменения исхода визита.
+        </p>
+      )}
+      <div
+        className="star-picker"
+        role="radiogroup"
+        aria-label="Оценка мастера"
+      >
+        {[1, 2, 3, 4, 5].map((value) => (
+          <label key={value}>
+            <input
+              type="radio"
+              name={`review-${booking.id}`}
+              value={value}
+              checked={rating === value}
+              onChange={() => setRating(value)}
+              aria-label={`${value} из 5 — ${ratingLabels[value]}`}
+            />
+            <span aria-hidden="true">★</span>
+          </label>
+        ))}
+      </div>
+      {rating > 0 && <p className="rating-label">{ratingLabels[rating]}</p>}
+      <div className="inline-actions">
+        <button
+          className="button primary"
+          disabled={!rating || action.busy}
+          onClick={() =>
+            void action.run(async () => {
+              await api(
+                `/me/bookings/${booking.id}/review`,
+                review?.status === "active" ? "PATCH" : "POST",
+                {
+                  rating,
+                  ...(review?.status === "active"
+                    ? { expectedVersion: review.version }
+                    : {}),
+                },
+              );
+              setEditing(false);
+              reload();
+            }, `Спасибо! Вы оценили работу мастера на ${rating} из 5`)
+          }
+        >
+          {action.busy ? "Сохраняем…" : "Сохранить оценку"}
+        </button>
+        {review?.status === "active" && (
+          <button
+            className="button secondary"
+            disabled={action.busy}
+            onClick={() => {
+              setRating(review.rating);
+              setEditing(false);
+            }}
+          >
+            Отмена
+          </button>
+        )}
+      </div>
+      {action.feedback}
+    </div>
+  );
+}
+
 export function BookingPage({ work = false }: { work?: boolean }) {
   const { t, id } = useParams();
   const path = work ? `/work/${t}/bookings/${id}` : `/me/bookings/${id}`;
@@ -566,6 +708,9 @@ export function BookingPage({ work = false }: { work?: boolean }) {
                       {b.timezoneSnapshot}).
                     </p>
                   )}
+                  {!work && (
+                    <VisitReviewPanel booking={b} reload={data.reload} />
+                  )}
                   <div className="inline-actions">
                     {b.allowedActions.includes("reschedule") && (
                       <Link
@@ -573,6 +718,11 @@ export function BookingPage({ work = false }: { work?: boolean }) {
                         to={`${work ? `/work/${t}` : "/me"}/bookings/${id}/reschedule`}
                       >
                         Перенести
+                      </Link>
+                    )}
+                    {!work && b.allowedActions.includes("reschedule") && b.publicCode && (
+                      <Link className="button secondary" to={`/me/waitlist/new?code=${encodeURIComponent(b.publicCode)}&service=${b.serviceId}&staff=${b.staffId}&linked=${b.id}`}>
+                        Хочу раньше
                       </Link>
                     )}
                     {b.allowedActions.includes("cancel") && (

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "workflow": "visit-reviews-and-ui-first-iteration",
+  "repository": "/Users/alexandrmamleev/Documents/ChatGPT/max_hakatoin",
+  "reviewsBranch": "codex/visit-reviews",
+  "uiBranch": "codex/ui-experiments",
+  "reviewsBaseBranch": "codex/live-window",
+  "reviewsBaseCommit": "34f17ebe135a4783fa271893ac0769bbdd9839d6",
+  "phase": "MERGING_TO_MAIN",
+  "completedStages": [
+    "reviews_spec",
+    "reviews_implementation",
+    "reviews_qa"
+  ],
+  "automationIds": {
+    "reviews_spec": "1-6",
+    "reviews_implementation": "2-6",
+    "reviews_qa": "3-6-qa",
+    "merge": "4-6-main",
+    "ui_spec": "5-6-ui",
+    "ui_implementation": "6-6-ui"
+  },
+  "stageCommits": {
+    "reviews_implementation": "cb04096",
+    "reviews_qa": "ee445b0"
+  },
+  "attempts": {
+    "reviews_spec": 1,
+    "reviews_implementation": 1,
+    "reviews_qa": 1,
+    "merge": 1,
+    "ui_spec": 0,
+    "ui_implementation": 0
+  },
+  "lastCompletedMilestone": "merge-preflight-green",
+  "lastError": null,
+  "blockedReason": null,
+  "updatedAt": "2026-09-28T06:51:00+03:00"
+}

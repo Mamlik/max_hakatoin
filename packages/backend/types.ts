@@ -49,6 +49,7 @@ export interface Service {
   version: number;
   active: boolean;
   category_id: string | null;
+  cover_media_id: string | null;
 }
 export interface Staff {
   id: string;
@@ -58,7 +59,10 @@ export interface Staff {
   active: boolean;
   version: number;
   membership_id: string | null;
+  photo_media_id: string | null;
   service_ids?: string[];
+  rating_average?: number | null;
+  rating_count?: number | null;
 }
 export interface Customer {
   id: string;
@@ -91,6 +95,22 @@ export interface Booking {
   customer_name?: string;
   staff_name?: string;
   tenant_name?: string;
+}
+export interface VisitReview {
+  id: string;
+  tenant_id: string;
+  booking_id: string;
+  user_id: string;
+  staff_id: string;
+  rating: number;
+  status: "active" | "invalidated";
+  invalidated_reason: string | null;
+  staff_name_snapshot: string;
+  tenant_name_snapshot: string;
+  version: number;
+  created_at: Date;
+  updated_at: Date;
+  invalidated_at: Date | null;
 }
 export interface Voucher {
   id: string;
@@ -164,4 +184,61 @@ export interface QuoteIntent {
   bookingId?: string;
   expectedVersion?: number;
   removeVoucher?: boolean;
+}
+export interface WaitlistRequest {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  service_id: string;
+  linked_booking_id: string | null;
+  linked_booking_version: number | null;
+  date_from: string;
+  date_to: string;
+  weekdays: number[];
+  daily_start_local: string;
+  daily_end_local: string;
+  minimum_notice_minutes: number;
+  priority_at: Date;
+  eligibility_hash: string;
+  consent_version: string;
+  status: string;
+  suspension_reason: string | null;
+  version: number;
+  expires_at: Date;
+  created_at: Date;
+  updated_at: Date;
+  staff_ids?: string[];
+}
+export interface LiveWindow {
+  id: string;
+  tenant_id: string;
+  staff_id: string;
+  service_id: string;
+  source_event_key: string;
+  source_booking_id: string;
+  source_booking_version: number;
+  start_at: Date;
+  end_at: Date;
+  duration_snapshot: number;
+  timezone_snapshot: string;
+  status: string;
+  close_reason: string | null;
+  filled_booking_id: string | null;
+  version: number;
+}
+export interface LiveWindowOffer {
+  id: string;
+  tenant_id: string;
+  window_id: string;
+  request_id: string;
+  user_id: string;
+  request_version: number;
+  eligibility_hash: string;
+  sequence: number;
+  status: string;
+  offered_at: Date | null;
+  expires_at: Date | null;
+  terminal_reason: string | null;
+  booking_id: string | null;
+  version: number;
 }

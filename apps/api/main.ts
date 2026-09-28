@@ -17,6 +17,8 @@ import { crmRoutes } from "../../packages/backend/crm.routes.js";
 import { partnerRoutes } from "../../packages/backend/partners.routes.js";
 import { loyaltyRoutes } from "../../packages/backend/loyalty.routes.js";
 import { analyticsRoutes } from "../../packages/backend/analytics.routes.js";
+import { liveWindowRoutes } from "../../packages/backend/live-window.routes.js";
+import { reviewRoutes } from "../../packages/backend/reviews.routes.js";
 import { canonical, equalSecret, hash } from "../../packages/backend/auth.js";
 import { endpoints } from "../../packages/backend/http.js";
 import { z } from "zod";
@@ -30,7 +32,7 @@ export async function createApp() {
     // X-Forwarded-For. Without this every visitor shares one rate-limit bucket.
     // Trust exactly one hop: the address Caddy itself observed. Anything a client
     // puts in the header sits further left and is ignored, so the limit stands.
-    trustProxy: 1,
+    trustProxy: (_address: string, hop: number) => hop === 0,
     logger: {
       level: "info",
       redact: ["req.headers.authorization", "req.headers.x-max-bot-api-secret"],
@@ -130,6 +132,8 @@ export async function createApp() {
   partnerRoutes(server);
   analyticsRoutes(server);
   loyaltyRoutes(server);
+  liveWindowRoutes(server);
+  reviewRoutes(server);
   server.get("/api/openapi.json", async () => {
     const paths: Record<string, Record<string, unknown>> = {};
     for (const e of endpoints) {

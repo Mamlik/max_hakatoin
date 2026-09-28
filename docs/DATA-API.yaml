@@ -13,7 +13,7 @@
       "method": "POST",
       "path": "/api/v1/auth/max",
       "role": "public",
-      "description": "Проверка подписи MAX и создание часовой сессии",
+      "description": "Проверка подписи MAX и создание сессии со скользящим сроком",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
     },
@@ -276,7 +276,7 @@
     {
       "method": "POST",
       "path": "/api/v1/work/:t/media",
-      "role": "owner,admin",
+      "role": "owner,admin,master",
       "description": "Загрузка и безопасное перекодирование изображения",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
@@ -284,7 +284,7 @@
     {
       "method": "GET",
       "path": "/api/v1/work/:t/media/:id",
-      "role": "owner,admin",
+      "role": "owner,admin,master",
       "description": "Защищённый просмотр чернового изображения",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
@@ -294,6 +294,22 @@
       "path": "/media/:key",
       "role": "public",
       "description": "Только опубликованные изображения",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/my-staff-profile",
+      "role": "master",
+      "description": "Профиль текущего мастера",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/my-staff-profile",
+      "role": "master",
+      "description": "Обновить фотографию текущего мастера",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
     },
@@ -1006,6 +1022,174 @@
       "path": "/api/v1/work/:t/loyalty-programs",
       "role": "owner",
       "description": "Настроить количество платных посещений для бесплатного визита той же услуги",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/waitlist-requests",
+      "role": "user",
+      "description": "Собственные запросы ожидания Live Window",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/waitlist-requests",
+      "role": "user",
+      "description": "Создать запрос ожидания после повторной проверки обычных слотов",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/waitlist-requests/:id",
+      "role": "user",
+      "description": "Собственный запрос ожидания",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/live-window/pause",
+      "role": "owner,admin",
+      "description": "Поставить автоматические предложения на операционную паузу",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/live-window/resume",
+      "role": "owner,admin",
+      "description": "Снять операционную паузу Live Window",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me/waitlist-requests/:id",
+      "role": "user",
+      "description": "Изменить условия запроса ожидания",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/waitlist-requests/:id/pause",
+      "role": "user",
+      "description": "pause запроса ожидания",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/waitlist-requests/:id/resume",
+      "role": "user",
+      "description": "resume запроса ожидания",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/waitlist-requests/:id/cancel",
+      "role": "user",
+      "description": "cancel запроса ожидания",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/live-window-offers",
+      "role": "user",
+      "description": "Собственные предложения Live Window",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/live-window-offers/:id",
+      "role": "user",
+      "description": "Собственное предложение Live Window",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/live-window-offers/:id/accept",
+      "role": "user",
+      "description": "Атомарно принять предложение Live Window",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/live-window-offers/:id/decline",
+      "role": "user",
+      "description": "Отклонить предложение и продолжить FIFO",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/live-window/settings",
+      "role": "owner,admin",
+      "description": "Настройки Live Window салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/live-window/settings",
+      "role": "owner",
+      "description": "Включить и настроить Live Window",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/live-window/windows",
+      "role": "owner,admin",
+      "description": "Окна и обезличенная цепочка предложений",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/live-window/windows/:id",
+      "role": "owner,admin",
+      "description": "Одно Live Window и обезличенная цепочка предложений",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/live-window/windows/:id/close",
+      "role": "owner,admin",
+      "description": "Закрыть конкретное Live Window",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/live-window/summary",
+      "role": "owner,admin",
+      "description": "Агрегированные метрики Live Window",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/bookings/:b/review",
+      "role": "user",
+      "description": "Оценить мастера после завершённого визита",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me/bookings/:b/review",
+      "role": "user",
+      "description": "Изменить собственную оценку завершённого визита",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
     }

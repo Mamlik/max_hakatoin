@@ -7,6 +7,7 @@ import { required, fail, version } from "./errors.js";
 import { config } from "./config.js";
 import { empty, expected, id, text } from "../contracts/schemas.js";
 import type { Actor, Membership, Tenant } from "./types.js";
+import { publicSalon } from "./salons.routes.js";
 
 export function identityRoutes(app: FastifyInstance) {
   route(
@@ -183,14 +184,23 @@ export function identityRoutes(app: FastifyInstance) {
     "GET",
     "/api/v1/me/salons",
     { description: "Салоны с записями и избранные" },
-    async ({ db, actor }) =>
-      list(
-        await rows(
-          db,
-          "SELECT DISTINCT t.id,t.name,t.public_code,t.status,t.published_style, EXISTS(SELECT 1 FROM favorites f WHERE f.user_id=$1 AND f.tenant_id=t.id) favorite FROM tenants t WHERE t.id IN (SELECT tenant_id FROM favorites WHERE user_id=$1 UNION SELECT tenant_id FROM customers WHERE user_id=$1)",
-          [actor.id],
+    async ({ db, actor }) => {
+      const salons = await rows<Tenant & { favorite: boolean }>(
+        db,
+        "SELECT t.*, EXISTS(SELECT 1 FROM favorites f WHERE f.user_id=$1 AND f.tenant_id=t.id) favorite FROM tenants t WHERE EXISTS(SELECT 1 FROM favorites f WHERE f.user_id=$1 AND f.tenant_id=t.id) OR EXISTS(SELECT 1 FROM customers c WHERE c.user_id=$1 AND c.tenant_id=t.id)",
+        [actor.id],
+      );
+      return list(
+        await Promise.all(
+          salons.map(async (salon) => ({
+            ...(await publicSalon(db, salon)),
+            status: salon.status,
+            version: salon.version,
+            favorite: salon.favorite,
+          })),
         ),
-      ),
+      );
+    },
   );
   for (const method of ["PUT", "DELETE"] as const)
     route(
@@ -409,6 +419,17 @@ export function identityRoutes(app: FastifyInstance) {
           ]),
         );
         return { path: "/me/offers" };
+      }
+      if (b.payload.startsWith("lw_") && z.uuid().safeParse(b.payload.slice(3)).success) {
+        const offerId = b.payload.slice(3);
+        required(
+          await one(
+            db,
+            "SELECT id FROM live_window_offers WHERE id=$1 AND user_id=$2",
+            [offerId, actor.id],
+          ),
+        );
+        return { path: `/me/live-window/offers/${offerId}` };
       }
       return fail(404, "NOT_FOUND", "Ссылка недействительна");
     },
