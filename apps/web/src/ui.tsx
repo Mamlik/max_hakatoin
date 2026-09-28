@@ -255,10 +255,12 @@ export function Empty({
 export function Load({
   loading,
   error,
+  reload,
   children,
 }: {
   loading: boolean;
   error?: string;
+  reload?: () => void;
   children: ReactNode;
 }) {
   if (loading)
@@ -273,6 +275,14 @@ export function Load({
     return (
       <div className="notice error" role="alert">
         {error}
+        {reload && (
+          <div className="inline-actions">
+            {/* Без этого единственный выход из сбоя — уйти на другой экран. */}
+            <button className="button secondary compact" onClick={reload}>
+              Повторить
+            </button>
+          </div>
+        )}
       </div>
     );
   return <>{children}</>;
