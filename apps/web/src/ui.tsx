@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -50,19 +51,22 @@ export function TimezonePicker({
 }: {
   defaultValue?: string;
 }) {
-  // Вариантов 11, в карусель влезает 3-4. Без доскролла владелец дальневосточного
-  // салона открывает настройки и видит карусель, где ничего не выбрано.
+  // Вариантов 11, в карусель влезает 3-4. Выбранный надо доводить до экрана:
+  // иначе владелец дальневосточного салона видит карусель, где ничего не
+  // выбрано, а стрелками с клавиатуры каждый второй вариант уходит за край
+  // (браузер везёт к фокусу скрытый radio нулевого размера, а не саму плашку).
   const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  const reveal = useCallback(() => {
     const scroller = box.current;
     const active = scroller?.querySelector("input:checked")?.parentElement;
     if (!scroller || !active) return;
-    const shift =
-      active.getBoundingClientRect().left -
-      scroller.getBoundingClientRect().left -
-      (scroller.clientWidth - active.clientWidth) / 2;
-    if (Math.abs(shift) > 1) scroller.scrollLeft += shift;
-  }, [defaultValue]);
+    const view = scroller.getBoundingClientRect();
+    const item = active.getBoundingClientRect();
+    if (item.left >= view.left - 1 && item.right <= view.right + 1) return;
+    scroller.scrollLeft +=
+      item.left - view.left - (scroller.clientWidth - active.clientWidth) / 2;
+  }, []);
+  useEffect(reveal, [reveal, defaultValue]);
   return (
     <Field label="Часовой пояс" hint="Листайте по горизонтали и выберите свой регион.">
       <div
@@ -70,6 +74,7 @@ export function TimezonePicker({
         role="radiogroup"
         aria-label="Часовой пояс"
         ref={box}
+        onChange={reveal}
       >
         {TIMEZONES.map(([value, offset, city]) => (
           <label key={value}>
