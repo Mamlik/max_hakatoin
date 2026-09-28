@@ -1,4 +1,10 @@
-import { useState, type ReactNode, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type FormEvent,
+} from "react";
 import { Link } from "react-router-dom";
 import { api, refreshData } from "./api";
 export const money = (n?: number | null) =>
@@ -44,9 +50,27 @@ export function TimezonePicker({
 }: {
   defaultValue?: string;
 }) {
+  // Вариантов 11, в карусель влезает 3-4. Без доскролла владелец дальневосточного
+  // салона открывает настройки и видит карусель, где ничего не выбрано.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = box.current;
+    const active = scroller?.querySelector("input:checked")?.parentElement;
+    if (!scroller || !active) return;
+    const shift =
+      active.getBoundingClientRect().left -
+      scroller.getBoundingClientRect().left -
+      (scroller.clientWidth - active.clientWidth) / 2;
+    if (Math.abs(shift) > 1) scroller.scrollLeft += shift;
+  }, [defaultValue]);
   return (
     <Field label="Часовой пояс" hint="Листайте по горизонтали и выберите свой регион.">
-      <div className="timezone-picker" role="radiogroup" aria-label="Часовой пояс">
+      <div
+        className="timezone-picker"
+        role="radiogroup"
+        aria-label="Часовой пояс"
+        ref={box}
+      >
         {TIMEZONES.map(([value, offset, city]) => (
           <label key={value}>
             <input

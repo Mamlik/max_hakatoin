@@ -660,7 +660,7 @@ export function BookingPage({ work = false }: { work?: boolean }) {
     <>
       <BackLink
         to={work ? `/work/${t}/calendar` : "/me/bookings"}
-        label="В календарь"
+        label={work ? "В календарь" : "К моим записям"}
       />
       <PageTitle title="Карточка визита" description={data.data?.tenantName} />
       <Load {...data}>
