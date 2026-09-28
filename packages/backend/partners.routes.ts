@@ -33,9 +33,9 @@ async function campaign(db: DB, tenant: string, id: string) {
   );
 }
 async function validateTerms(db: DB, c: Campaign, b: Terms) {
-  if (new Date(b.issueUntil) <= new Date(b.issueFrom))
+  if (b.issueFrom && b.issueUntil && new Date(b.issueUntil) <= new Date(b.issueFrom))
     fail(422, "VALIDATION_ERROR", "Конец выдачи должен быть позже начала");
-  if (b.issueLimit < c.issued_total)
+  if (b.issueLimit !== null && b.issueLimit < c.issued_total)
     fail(
       422,
       "VALIDATION_ERROR",
@@ -50,25 +50,20 @@ async function validateTerms(db: DB, c: Campaign, b: Terms) {
       "SELECT id,price_minor FROM services WHERE tenant_id=$1 AND active AND id=ANY($2::uuid[])",
       [tenantId, ids],
     );
-    if (services.length !== new Set(ids).size)
+    if (services.length !== ids.length || ids.length !== new Set(ids).size)
       fail(
         422,
         "VALIDATION_ERROR",
         "Услуги должны быть активны и принадлежать соответствующему салону",
       );
-    if (target && services.some((s) => s.price_minor < b.discountMinor))
-      fail(
-        422,
-        "VALIDATION_ERROR",
-        "Скидка превышает стоимость принимающей услуги",
-      );
+    // Fixed benefits are capped at the current price when redeemed.
   }
 }
 async function insertVersion(db: DB, c: Campaign, b: Terms) {
   await validateTerms(db, c, b);
   return one<CampaignVersion>(
     db,
-    "INSERT INTO campaign_versions(campaign_id,number,source_service_ids,target_service_ids,discount_minor,issue_from,issue_until,voucher_valid_days,issue_limit,terms_text,terms_hash) SELECT $1,COALESCE(max(number),0)+1,$2,$3,$4,$5,$6,$7,$8,$9,$10 FROM campaign_versions WHERE campaign_id=$1 RETURNING *",
+    "INSERT INTO campaign_versions(campaign_id,number,source_service_ids,target_service_ids,discount_minor,issue_from,issue_until,voucher_valid_days,issue_limit,terms_text,terms_hash,reward_type,discount_percent,free_visits_count) SELECT $1,COALESCE(max(number),0)+1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13 FROM campaign_versions WHERE campaign_id=$1 RETURNING *",
     [
       c.id,
       b.sourceServiceIds,
@@ -80,6 +75,7 @@ async function insertVersion(db: DB, c: Campaign, b: Terms) {
       b.issueLimit,
       b.termsText,
       hash(canonical(b)),
+      b.rewardType,b.discountPercent,b.freeVisitsCount,
     ],
   );
 }
@@ -145,7 +141,7 @@ export function partnerRoutes(app: FastifyInstance) {
     {
       roles: own,
       schema: campaignTerms
-        .extend({ sourceTenantId: id, targetTenantId: id })
+        .safeExtend({ sourceTenantId: id, targetTenantId: id })
         .strict(),
       description: "Создание черновика односторонней кампании",
     },
@@ -201,7 +197,7 @@ export function partnerRoutes(app: FastifyInstance) {
     {
       roles: own,
       schema: campaignTerms
-        .extend({ expectedVersion: z.number().int().positive() })
+        .safeExtend({ expectedVersion: z.number().int().positive() })
         .strict(),
       description: "Новая версия с сохранением действующих условий",
     },
@@ -244,7 +240,7 @@ export function partnerRoutes(app: FastifyInstance) {
     {
       roles: own,
       schema: campaignTerms
-        .extend({ expectedVersion: z.number().int().positive() })
+        .safeExtend({ expectedVersion: z.number().int().positive() })
         .strict(),
       description: "Редактирование только несогласованного черновика",
     },
@@ -269,7 +265,7 @@ export function partnerRoutes(app: FastifyInstance) {
       await audit(db, p.t!, actor.id, "campaign.version_updated", c.id);
       return one(
         db,
-        "UPDATE campaign_versions SET source_service_ids=$2,target_service_ids=$3,discount_minor=$4,issue_from=$5,issue_until=$6,voucher_valid_days=$7,issue_limit=$8,terms_text=$9,terms_hash=$10,version=version+1 WHERE id=$1 RETURNING *",
+        "UPDATE campaign_versions SET source_service_ids=$2,target_service_ids=$3,discount_minor=$4,issue_from=$5,issue_until=$6,voucher_valid_days=$7,issue_limit=$8,terms_text=$9,terms_hash=$10,reward_type=$11,discount_percent=$12,free_visits_count=$13,version=version+1 WHERE id=$1 RETURNING *",
         [
           v.id,
           b.sourceServiceIds,
@@ -281,6 +277,7 @@ export function partnerRoutes(app: FastifyInstance) {
           b.issueLimit,
           b.termsText,
           hash(canonical(terms)),
+          b.rewardType,b.discountPercent,b.freeVisitsCount,
         ],
       );
     },
@@ -355,8 +352,11 @@ export function partnerRoutes(app: FastifyInstance) {
             sourceServiceIds: v.source_service_ids,
             targetServiceIds: v.target_service_ids,
             discountMinor: v.discount_minor,
-            issueFrom: v.issue_from.toISOString(),
-            issueUntil: v.issue_until.toISOString(),
+            rewardType:v.reward_type,
+            discountPercent:v.discount_percent,
+            freeVisitsCount:v.free_visits_count,
+            issueFrom: v.issue_from?.toISOString() ?? null,
+            issueUntil: v.issue_until?.toISOString() ?? null,
             voucherValidDays: v.voucher_valid_days,
             issueLimit: v.issue_limit,
             termsText: v.terms_text,
@@ -523,11 +523,22 @@ export function partnerRoutes(app: FastifyInstance) {
       };
     },
   );
+  route(app,'GET','/api/v1/me/campaigns',{description:'Активные партнёрские программы и согласие на версию'},async({db,actor})=>list(await rows(db,
+    "SELECT c.id,c.source_tenant_id,c.target_tenant_id,c.active_version_id,c.issued_total,v.number,v.reward_type,v.discount_minor,v.discount_percent,v.free_visits_count,v.source_service_ids,v.target_service_ids,v.issue_from,v.issue_until,v.voucher_valid_days,v.issue_limit,v.terms_text,a.name source_name,b.name target_name,COALESCE(cc.granted,false) consent_granted FROM campaigns c JOIN campaign_versions v ON v.id=c.active_version_id JOIN tenants a ON a.id=c.source_tenant_id JOIN tenants b ON b.id=c.target_tenant_id LEFT JOIN campaign_customer_consents cc ON cc.user_id=$1 AND cc.version_id=v.id WHERE c.status='active' AND a.status='published' AND b.status='published' AND NOT EXISTS(SELECT 1 FROM campaign_pauses p WHERE p.campaign_id=c.id) ORDER BY a.name,b.name",
+    [actor.id]),1000));
+  route(app,'PUT','/api/v1/me/campaigns/:id/consent',{
+    description:'Согласие клиента на действующую версию партнёрских условий',
+    schema:z.object({versionId:z.uuid(),granted:z.boolean()}).strict(),
+  },async({db,actor,p,b})=>{
+    const c=required(await one<Campaign>(db,"SELECT * FROM campaigns WHERE id=$1 AND status='active' AND active_version_id=$2",[p.id,b.versionId]));
+    const row=required(await one(db,"INSERT INTO campaign_customer_consents(user_id,version_id,granted) VALUES($1,$2,$3) ON CONFLICT(user_id,version_id) DO UPDATE SET granted=$3,updated_at=now() RETURNING *",[actor.id,b.versionId,b.granted]));
+    await audit(db,c.source_tenant_id,actor.id,b.granted?'campaign.client_consent_granted':'campaign.client_consent_revoked',c.id,{versionId:b.versionId});return row;
+  });
   voucherRoutes(app);
 }
 function voucherRoutes(app: FastifyInstance) {
   const projection =
-    "SELECT v.id,v.target_tenant_id,v.source_tenant_id,v.status,v.discount_minor,v.target_service_ids,v.terms_snapshot,v.issued_at,v.expires_at,v.reserved_booking_id,v.redeemed_booking_id,v.version,a.name source_name,b.name target_name,b.public_code target_code FROM vouchers v JOIN tenants a ON a.id=v.source_tenant_id JOIN tenants b ON b.id=v.target_tenant_id";
+    "SELECT v.id,v.target_tenant_id,v.source_tenant_id,v.status,v.discount_minor,v.reward_type,v.discount_percent,v.free_visits_count,v.remaining_visits,(SELECT count(*)::int FROM voucher_uses u WHERE u.voucher_id=v.id AND u.status='reserved') reserved_visits,v.target_service_ids,v.terms_snapshot,v.issued_at,v.expires_at,v.reserved_booking_id,v.redeemed_booking_id,v.version,a.name source_name,b.name target_name,b.public_code target_code FROM vouchers v JOIN tenants a ON a.id=v.source_tenant_id JOIN tenants b ON b.id=v.target_tenant_id";
   route(
     app,
     "GET",
@@ -569,7 +580,7 @@ function voucherRoutes(app: FastifyInstance) {
       list(
         await rows(
           db,
-          "SELECT id,campaign_id,status,discount_minor,issued_at,expires_at,version FROM vouchers WHERE source_tenant_id=$1 OR target_tenant_id=$1 ORDER BY issued_at DESC LIMIT 100",
+          "SELECT id,campaign_id,status,discount_minor,reward_type,discount_percent,free_visits_count,remaining_visits,issued_at,expires_at,version FROM vouchers WHERE source_tenant_id=$1 OR target_tenant_id=$1 ORDER BY issued_at DESC LIMIT 100",
           [p.t],
         ),
       ),

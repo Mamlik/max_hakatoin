@@ -6,6 +6,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { api, useApi, useAuth, refreshData, currentSession } from "./api";
+import { PromotionCards } from './promotions-ui';
 import {
   PageTitle,
   Icon,
@@ -698,11 +699,11 @@ export function OffersPage() {
       <PageTitle
         eyebrow="МАЛЕНЬКИЕ ПРИЯТНЫЕ ПОВОДЫ"
         title="Предложения для вас"
-        description="Персональные купоны от партнёров ваших салонов."
+        description="Партнёрские награды и временные акции салонов."
       />
+      <PromotionCards/>
       <div className="notice">
-        Купон выдаётся после завершённого визита, если вы заранее разрешили
-        участие в программе и предложения исходного салона.
+        Купон выдаётся после платного визита, если вы заранее согласились с действующей версией партнёрской программы. Согласия настраиваются в разделе «Лояльность».
       </div>
       <select
         aria-label="Статус купона"
@@ -765,10 +766,10 @@ export function OffersPage() {
                   <span className="eyebrow">ОТ {v.sourceName}</span>
                   <Badge status={v.status} />
                 </div>
-                <div className="offer-amount">−{money(v.discountMinor)}</div>
+                <div className="offer-amount">{v.rewardType==='percent'?`−${v.discountPercent}%`:v.rewardType==='free_visits'?`${v.remainingVisits} бесплатн. посещ.`:`−${money(v.discountMinor)}`}</div>
                 <h3>{v.targetName}</h3>
                 <p>{v.termsSnapshot.termsText}</p>
-                <small>Действует до {dateTime(v.expiresAt)}</small>
+                <small>{v.expiresAt?`Действует до ${dateTime(v.expiresAt)}`:'Без срока'}</small>
                 {v.status === "issued" && (
                   <Link
                     className="button primary"
@@ -783,7 +784,7 @@ export function OffersPage() {
         ) : (
           <Empty
             title="Предложения появятся здесь"
-            text="Включите участие в профиле и посетите салон с согласованной партнёрской программой."
+            text="Откройте раздел лояльности и подтвердите условия нужной партнёрской программы до визита."
             action={
               <Link to="/me/profile" className="button secondary">
                 Настройки участия
@@ -817,7 +818,7 @@ function SalonPreferences({ salon }: { salon: Salon }) {
               onChange={(v) => setPrefs({ ...prefs, reminderBotEnabled: v })}
             />
             <Check
-              label="Разрешить выдачу партнёрских купонов после визита"
+              label="Разрешить сообщения MAX о купонах этого салона"
               checked={prefs.partnerAllowed}
               onChange={(v) => setPrefs({ ...prefs, partnerAllowed: v })}
             />
@@ -901,11 +902,11 @@ export function ProfilePage() {
         <section className="panel">
           <h2>Партнёрская программа</h2>
           <p>
-            После визита можно получить персональный купон другого салона.
+            После визита можно получить персональный купон другого салона, если принять его действующие условия в разделе лояльности.
             Контакты и CRM-заметки партнёрам не передаются.
           </p>
           <Check
-            label="Участвовать в партнёрской программе"
+            label="Разрешить сообщения MAX о партнёрских предложениях"
             checked={auth.me!.user.partnerProgramEnabled}
             disabled={a.busy}
             onChange={(enabled) =>
@@ -921,8 +922,7 @@ export function ProfilePage() {
           />
           {a.feedback}
           <p className="small muted">
-            Дополнительно разрешите предложения нужного салона ниже. Уже
-            выданные купоны сохраняются при отказе.
+            Это настройка сообщений бота. Согласие на выдачу купонов даётся отдельно для каждой версии программы в разделе «Лояльность». Уже выданные купоны сохраняются при отказе.
           </p>
           <hr />
           <h3>Обработка данных</h3>

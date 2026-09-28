@@ -87,6 +87,7 @@ export const labels: Record<string, string> = {
   proposed: "На согласовании",
   rejected: "Отклонена",
   ended: "Завершена",
+  exhausted: "Лимит исчерпан",
   pending: "Ожидает",
   accepted: "Принято",
   client_confirmed: "Клиент подтвердил",

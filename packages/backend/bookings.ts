@@ -1,4 +1,4 @@
-import { checkReward, loyaltyOutcome } from "./loyalty.js";
+import { checkReward, loyaltyOutcome, rewardDiscount } from "./loyalty.js";
 import { createHmac } from "node:crypto";
 import { one, rows, type DB } from "../db/db.js";
 import type {
@@ -20,6 +20,10 @@ import { config } from "./config.js";
 import { audit } from "./http.js";
 import { bookingEvent, notify } from "./notifications.js";
 import { emitSlotReleased } from "./live-window.js";
+import { benefitDiscount } from './benefits.js';
+import { promotionCheck,promotionDiscount,reservePromotion,promotionOutcome } from './promotions.js';
+
+const voucherDiscount=(v:Voucher,price:number)=>benefitDiscount(price,v.reward_type,v.discount_minor,v.discount_percent);
 
 export async function voucherCheck(
   db: DB,
@@ -43,17 +47,21 @@ export async function voucherCheck(
       v.status === "issued" ||
       (v.status === "reserved" && v.reserved_booking_id === existingBooking)
     ) ||
-    v.expires_at.getTime() <= Date.now() ||
-    new Date(startAt) >= v.expires_at ||
+    (v.expires_at!==null && v.expires_at.getTime() <= Date.now()) ||
+    (v.expires_at!==null && new Date(startAt) >= v.expires_at) ||
     new Date(startAt) < v.issued_at ||
     !v.target_service_ids.includes(serviceId) ||
-    v.discount_minor > price
+    (v.reward_type==='free_visits' && v.remaining_visits===0)
   )
     fail(
       409,
       "VOUCHER_UNAVAILABLE",
       "Купон не подходит по услуге, сроку или уже использован",
     );
+  if(v.reward_type==='free_visits'){
+    const reserved=await one<{count:number}>(db,"SELECT count(*)::int count FROM voucher_uses WHERE voucher_id=$1 AND status='reserved' AND booking_id<>COALESCE($2::uuid,'00000000-0000-0000-0000-000000000000'::uuid)",[v.id,existingBooking??null]);
+    if((v.remaining_visits??0)-(reserved?.count??0)<1)fail(409,'VOUCHER_UNAVAILABLE','В купоне не осталось свободных посещений');
+  }
   return v;
 }
 export async function createQuote(
@@ -66,6 +74,7 @@ export async function createQuote(
     startAt: string;
     voucherId?: string | null;
     loyaltyRewardId?: string | null;
+    promotionVersionId?: string | null;
     customerId?: string;
     expectedVersion?: number;
     removeVoucher?: boolean;
@@ -151,6 +160,7 @@ export async function createQuote(
     : (input.voucherId ?? existing?.applied_voucher_id ?? null);
   const loyaltyRewardId =
     input.loyaltyRewardId ?? existing?.loyalty_reward_id ?? null;
+  const promotionVersionId=input.promotionVersionId===undefined?existing?.promotion_version_id??null:input.promotionVersionId;
   if (
     existing?.loyalty_reward_id &&
     loyaltyRewardId !== existing.loyalty_reward_id
@@ -160,22 +170,23 @@ export async function createQuote(
       "LOYALTY_REWARD_UNAVAILABLE",
       "Для замены награды отмените запись и создайте новую.",
     );
-  if (loyaltyRewardId && voucherId)
+  if ([loyaltyRewardId,voucherId,promotionVersionId].filter(Boolean).length>1)
     fail(
       422,
       "VALIDATION_ERROR",
-      "Бесплатный визит нельзя объединять с партнёрским купоном.",
+      "К записи можно применить только одну награду или акцию.",
     );
-  if (loyaltyRewardId)
-    await checkReward(
+  const reward = loyaltyRewardId
+    ? await checkReward(
       db,
       loyaltyRewardId,
       tenant.id,
       customer.id,
       service.id,
       existing?.id,
-    );
+    ) : null;
   let voucher: Voucher | undefined;
+  const promotion=promotionVersionId?await promotionCheck(db,promotionVersionId,tenant.id,service.id,input.startAt,existing?.id):null;
   if (voucherId) {
     try {
       voucher = await voucherCheck(
@@ -214,9 +225,10 @@ export async function createQuote(
     staffVersion: staff.version,
     priceMinor: price,
     durationMin: duration,
-    discountMinor: loyaltyRewardId ? price : (voucher?.discount_minor ?? 0),
+    discountMinor: reward ? rewardDiscount(reward,price) : voucher ? voucherDiscount(voucher,price) : promotion ? promotionDiscount(promotion,price) : 0,
     voucherId,
     loyaltyRewardId,
+    promotionVersionId,
     serviceName: sameService ? existing!.service_name_snapshot : service.name,
     ...(existing
       ? {
@@ -385,16 +397,22 @@ export async function confirmQuote(
       i.priceMinor,
       existing?.id,
     );
+  if(i.promotionVersionId){
+    const promotion=await promotionCheck(db,i.promotionVersionId,tenant.id,i.serviceId,i.startAt,existing?.id);
+    if(promotionDiscount(promotion,i.priceMinor)!==i.discountMinor)fail(409,'QUOTE_CHANGED','Условия акции изменились');
+  }
   if (
     existing?.applied_voucher_id &&
     existing.applied_voucher_id !== i.voucherId
   )
     await releaseVoucher(db, existing, actor.id);
+  if(existing?.promotion_version_id && existing.promotion_version_id!==i.promotionVersionId)
+    await promotionOutcome(db,existing.id,'cancelled');
   let booking: Booking;
   if (existing)
     booking = (await one<Booking>(
       db,
-      "UPDATE bookings SET staff_id=$2,service_id=$3,start_at=$4,end_at=$5,service_name_snapshot=$6,duration_snapshot=$7,price_minor_snapshot=$8,discount_minor=$9,applied_voucher_id=$10,version=version+1 WHERE id=$1 RETURNING *",
+      "UPDATE bookings SET staff_id=$2,service_id=$3,start_at=$4,end_at=$5,service_name_snapshot=$6,duration_snapshot=$7,price_minor_snapshot=$8,discount_minor=$9,applied_voucher_id=$10,promotion_version_id=$11,version=version+1 WHERE id=$1 RETURNING *",
       [
         existing.id,
         i.staffId,
@@ -406,6 +424,7 @@ export async function confirmQuote(
         i.priceMinor,
         i.discountMinor,
         i.voucherId,
+        i.promotionVersionId??null,
       ],
     ))!;
   else
@@ -436,10 +455,8 @@ export async function confirmQuote(
       i.loyaltyRewardId,
     ]);
     booking.loyalty_reward_id = i.loyaltyRewardId;
-    await db.query(
-      "UPDATE loyalty_rewards SET status='reserved',reserved_booking_id=$2 WHERE id=$1",
-      [i.loyaltyRewardId, booking.id],
-    );
+    await db.query("INSERT INTO loyalty_reward_uses(reward_id,booking_id,status) VALUES($1,$2,'reserved') ON CONFLICT(reward_id,booking_id) DO UPDATE SET status='reserved'",[i.loyaltyRewardId,booking.id]);
+    await db.query("UPDATE loyalty_rewards SET status='reserved',reserved_booking_id=$2 WHERE id=$1 AND reward_type<>'free_visits'",[i.loyaltyRewardId,booking.id]);
     await audit(
       db,
       tenant.id,
@@ -450,11 +467,15 @@ export async function confirmQuote(
     );
   }
   if (i.voucherId) {
-    await db.query(
-      "UPDATE vouchers SET status='reserved',reserved_booking_id=$2,version=version+1 WHERE id=$1",
-      [i.voucherId, booking.id],
-    );
+    await db.query("INSERT INTO voucher_uses(voucher_id,booking_id,status) VALUES($1,$2,'reserved') ON CONFLICT(voucher_id,booking_id) DO UPDATE SET status='reserved'",[i.voucherId,booking.id]);
+    await db.query("UPDATE vouchers SET status='reserved',reserved_booking_id=$2,version=version+1 WHERE id=$1 AND reward_type<>'free_visits'",[i.voucherId,booking.id]);
     await voucherRevision(db, i.voucherId, "reserved", actor.id);
+  }
+  if(i.promotionVersionId){
+    await db.query('UPDATE bookings SET promotion_version_id=$2 WHERE id=$1',[booking.id,i.promotionVersionId]);
+    booking.promotion_version_id=i.promotionVersionId;
+    await reservePromotion(db,booking.id,i.promotionVersionId);
+    await audit(db,tenant.id,actor.id,'promotion.reserved',i.promotionVersionId,{bookingId:booking.id});
   }
   await bookingRevision(
     db,
@@ -516,8 +537,9 @@ export async function releaseVoucher(
     ]),
   );
   if (v.status === "redeemed") return;
+  await db.query("INSERT INTO voucher_uses(voucher_id,booking_id,status) VALUES($1,$2,'released') ON CONFLICT(voucher_id,booking_id) DO UPDATE SET status='released'",[v.id,booking.id]);
   await db.query(
-    "UPDATE vouchers SET status=CASE WHEN expires_at<=now() THEN 'expired' ELSE 'issued' END,reserved_booking_id=NULL,version=version+1 WHERE id=$1 AND status='reserved'",
+    "UPDATE vouchers SET status=CASE WHEN expires_at IS NOT NULL AND expires_at<=now() THEN 'expired' ELSE 'issued' END,reserved_booking_id=NULL,version=version+1 WHERE id=$1 AND status='reserved'",
     [v.id],
   );
   await db.query(
@@ -527,13 +549,7 @@ export async function releaseVoucher(
   await voucherRevision(db, v.id, "released", actorId);
 }
 export async function issueVouchers(db: DB, booking: Booking, actorId: string) {
-  if (!booking.user_id) return;
-  const consent = await one(
-    db,
-    "SELECT 1 FROM users u JOIN preferences p ON p.user_id=u.id WHERE u.id=$1 AND u.partner_program_enabled AND p.tenant_id=$2 AND p.partner_allowed",
-    [booking.user_id, booking.tenant_id],
-  );
-  if (!consent) return;
+  if (!booking.user_id || booking.price_minor_snapshot-booking.discount_minor<=0) return;
   const campaigns = await rows<Campaign>(
     db,
     "SELECT c.* FROM campaigns c JOIN tenants a ON a.id=c.source_tenant_id JOIN tenants b ON b.id=c.target_tenant_id WHERE c.source_tenant_id=$1 AND c.status='active' AND a.status='published' AND b.status='published' AND a.partner_enabled AND b.partner_enabled AND NOT EXISTS(SELECT 1 FROM campaign_pauses p WHERE p.campaign_id=c.id) ORDER BY c.id",
@@ -549,14 +565,15 @@ export async function issueVouchers(db: DB, booking: Booking, actorId: string) {
     );
     if (
       !v.source_service_ids.includes(booking.service_id) ||
-      new Date() < v.issue_from ||
-      new Date() >= v.issue_until ||
-      c.issued_total >= v.issue_limit
+      (v.issue_from!==null && new Date() < v.issue_from) ||
+      (v.issue_until!==null && new Date() >= v.issue_until) ||
+      (v.issue_limit!==null && c.issued_total >= v.issue_limit) ||
+      !(await one(db,"SELECT 1 FROM campaign_customer_consents WHERE user_id=$1 AND version_id=$2 AND granted",[booking.user_id,v.id]))
     )
       continue;
     const voucher = await one<Voucher>(
       db,
-      "INSERT INTO vouchers(campaign_id,version_id,source_booking_id,user_id,source_tenant_id,target_tenant_id,discount_minor,target_service_ids,terms_snapshot,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+$10*interval '24 hours') ON CONFLICT(user_id,source_booking_id,campaign_id) DO NOTHING RETURNING *",
+      "INSERT INTO vouchers(campaign_id,version_id,source_booking_id,user_id,source_tenant_id,target_tenant_id,discount_minor,target_service_ids,terms_snapshot,expires_at,reward_type,discount_percent,free_visits_count,remaining_visits) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $10::int IS NULL THEN NULL ELSE now()+$10*interval '24 hours' END,$11,$12,$13,$13) ON CONFLICT(user_id,source_booking_id,campaign_id) DO NOTHING RETURNING *",
       [
         c.id,
         v.id,
@@ -569,10 +586,15 @@ export async function issueVouchers(db: DB, booking: Booking, actorId: string) {
         JSON.stringify({
           termsText: v.terms_text,
           discountMinor: v.discount_minor,
+          rewardType:v.reward_type,
+          discountPercent:v.discount_percent,
+          freeVisitsCount:v.free_visits_count,
+          voucherValidDays:v.voucher_valid_days,
           targetServiceIds: v.target_service_ids,
           versionNumber: v.number,
         }),
         v.voucher_valid_days,
+        v.reward_type,v.discount_percent,v.free_visits_count,
       ],
     );
     if (!voucher) continue;
@@ -593,11 +615,11 @@ export async function issueVouchers(db: DB, booking: Booking, actorId: string) {
       "voucher.issued",
       voucher.id,
       "Новое партнёрское предложение",
-      `${names.find((n) => n.id === c.source_tenant_id)!.name}: скидка ${v.discount_minor / 100} ₽ в ${names.find((n) => n.id === c.target_tenant_id)!.name}`,
+      `${names.find((n) => n.id === c.source_tenant_id)!.name}: новая награда в ${names.find((n) => n.id === c.target_tenant_id)!.name}`,
       {
         category: "offer",
         notAfter: new Date(
-          Math.min(voucher.expires_at.getTime(), Date.now() + 86400000),
+          Math.min(voucher.expires_at?.getTime()??Infinity, Date.now() + 86400000),
         ),
       },
     );
@@ -633,10 +655,8 @@ export async function outcome(
       "SELECT * FROM vouchers WHERE source_booking_id=$1",
       [booking.id],
     );
-    if (
-      target === "cancelled" &&
-      consequences.some((v) => ["reserved", "redeemed"].includes(v.status))
-    )
+    if (target !== 'completed' && (consequences.some((v) => ["reserved", "redeemed"].includes(v.status)) ||
+      await one(db,"SELECT 1 FROM voucher_uses u JOIN vouchers v ON v.id=u.voucher_id WHERE v.source_booking_id=$1 AND u.status IN ('reserved','redeemed') LIMIT 1",[booking.id])))
       fail(
         409,
         "PARTNER_REVIEW_REQUIRED",
@@ -659,11 +679,7 @@ export async function outcome(
             "Купон отозван",
             reason!,
           );
-        } else if (["reserved", "redeemed"].includes(v.status))
-          await db.query(
-            "INSERT INTO partner_exceptions(voucher_id,reason) VALUES($1,$2)",
-            [v.id, reason],
-          );
+        }
       }
     if (target === "completed" && booking.previous_voucher_id) {
       if (!restorePreviousVoucher)
@@ -687,7 +703,7 @@ export async function outcome(
       );
       await db.query(
         "UPDATE bookings SET applied_voucher_id=$2,discount_minor=$3 WHERE id=$1",
-        [booking.id, v.id, v.discount_minor],
+        [booking.id, v.id, voucherDiscount(v,booking.price_minor_snapshot)],
       );
       await voucherRevision(db, v.id, "redeemed_correction", actor.id, reason);
     }
@@ -706,22 +722,23 @@ export async function outcome(
           booking.applied_voucher_id,
         ]),
       );
-      if (v.status !== "reserved" || v.reserved_booking_id !== booking.id)
+      const voucherUse=await one<{status:string}>(db,'SELECT status FROM voucher_uses WHERE voucher_id=$1 AND booking_id=$2',[v.id,booking.id]);
+      if (voucherUse?.status!=='reserved' && (v.status !== "reserved" || v.reserved_booking_id !== booking.id))
         fail(
           409,
           "VOUCHER_UNAVAILABLE",
           "Резерв купона не соответствует записи",
         );
-      await db.query(
-        "UPDATE vouchers SET status='redeemed',redeemed_booking_id=$2,reserved_booking_id=NULL,version=version+1 WHERE id=$1",
-        [v.id, booking.id],
-      );
+      await db.query("INSERT INTO voucher_uses(voucher_id,booking_id,status) VALUES($1,$2,'redeemed') ON CONFLICT(voucher_id,booking_id) DO UPDATE SET status='redeemed'",[v.id,booking.id]);
+      if(v.reward_type==='free_visits')await db.query("UPDATE vouchers SET remaining_visits=remaining_visits-1,status=CASE WHEN remaining_visits=1 THEN 'redeemed' ELSE 'issued' END,redeemed_booking_id=CASE WHEN remaining_visits=1 THEN $2 ELSE redeemed_booking_id END,version=version+1 WHERE id=$1 AND remaining_visits>0",[v.id,booking.id]);
+      else await db.query("UPDATE vouchers SET status='redeemed',redeemed_booking_id=$2,reserved_booking_id=NULL,version=version+1 WHERE id=$1",[v.id,booking.id]);
       await voucherRevision(db, v.id, "redeemed", actor.id);
     }
     if (target === "cancelled" || target === "no_show")
       await releaseVoucher(db, booking, actor.id);
   }
   await loyaltyOutcome(db, booking, target, actor.id);
+  await promotionOutcome(db,booking.id,target);
   const updated = (await one<Booking>(
     db,
     "UPDATE bookings SET status=$2,version=version+1,outcome_at=now() WHERE id=$1 RETURNING *",

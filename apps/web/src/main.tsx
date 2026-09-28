@@ -38,6 +38,7 @@ import {
 } from "./work";
 import { PartnersPage } from "./partners";
 import { LoyaltyPage, LoyaltySettingsPage } from "./loyalty";
+import { PromotionsWorkPage } from './promotions-ui';
 import { LiveWindowOfferPage, LiveWindowWorkPage, WaitlistForm, WaitlistPage } from "./live-window-ui";
 import "./style.css";
 
@@ -211,6 +212,7 @@ function App() {
       ? [
           ["loyalty", "gift", "Лояльность"],
           ["partners", "gift", "Партнёрства"],
+          ["promotions", "gift", "Акции"],
           ["settings", "settings", "Настройки"],
           ["staff-access", "user", "Доступ"],
         ]
@@ -350,6 +352,7 @@ function App() {
             <Route path="/work/:t/settings" element={<SettingsPage />} />
             <Route path="/work/:t/staff-access" element={<AccessPage />} />
             <Route path="/work/:t/partners" element={<PartnersPage />} />
+            <Route path="/work/:t/promotions" element={<PromotionsWorkPage />} />
             <Route path="/work/:t/audit" element={<AuditPage />} />
             <Route
               path="*"

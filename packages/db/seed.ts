@@ -222,7 +222,7 @@ export async function seed() {
   });
   for (const key of ["a", "b"])
     await pool.query(
-      "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required) SELECT $1,id,5 FROM services WHERE id=$2 ON CONFLICT(tenant_id,service_id) DO NOTHING",
+      "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required) SELECT $1,s.id,5 FROM services s WHERE s.id=$2 AND NOT EXISTS(SELECT 1 FROM loyalty_programs p WHERE p.tenant_id=$1 AND p.service_id=s.id)",
       [fixtureId(`salon-${key}`), fixtureId(`service-${key}-0`)],
     );
   console.log("Demo fixtures ready. Existing salon data was preserved.");

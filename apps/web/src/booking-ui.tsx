@@ -65,6 +65,7 @@ export function BookingForm({
     work && !reschedule ? `/work/${t}/customers?limit=100` : null,
   );
   const [rewardId, setRewardId] = useState(params.get("reward") ?? "");
+  const [promotionId,setPromotionId]=useState(params.get('promotion')??'');
   const [customerId, setCustomerId] = useState(params.get("customer") ?? ""),
     [serviceId, setServiceId] = useState(params.get("service") ?? ""),
     [staffId, setStaffId] = useState(""),
@@ -83,6 +84,7 @@ export function BookingForm({
       setCustomerId(old.data.customerId);
       setVoucherId(old.data.appliedVoucherId ?? "");
       setRewardId(old.data.loyaltyRewardId ?? "");
+      setPromotionId(old.data.promotionVersionId??'');
     }
   }, [old.data?.id]);
   const vouchers = useApi<Items<Voucher>>(
@@ -98,10 +100,11 @@ export function BookingForm({
   const customerRewards = useApi<{ rewards: LoyaltyReward[] }>(
     work && customerId ? `/work/${t}/customers/${customerId}/loyalty` : null,
   );
+  const promotions=useApi<Items<{id:string;title:string;providerTenantId:string;serviceIds:string[];discountType:string;fixedDiscountMinor:number|null;discountPercent:number|null;startsAt:string;endsAt:string}>>('/me/promotions',true);
   const availableRewards =
     (work ? customerRewards.data?.rewards : rewards.data?.items)?.filter(
       (r) =>
-        r.status === "issued" &&
+        r.status === "issued" && (r.rewardType!=='free_visits'||r.remainingVisits>r.reservedVisits) &&
         r.tenantId === selectedSalon?.id &&
         r.serviceId === serviceId,
     ) ?? [];
@@ -131,7 +134,7 @@ export function BookingForm({
     setChallenge("");
     setRemoval(false);
     setError("");
-  }, [serviceId, staffId, date, voucherId, customerId, rewardId]);
+  }, [serviceId, staffId, date, voucherId, customerId, rewardId,promotionId]);
   async function getQuote(slot: Slot, removeVoucher = false) {
     setBusy(true);
     setError("");
@@ -144,6 +147,7 @@ export function BookingForm({
         staffId: slot.staffId,
         startAt: slot.startAt,
         ...(rewardId ? { loyaltyRewardId: rewardId } : {}),
+        ...(reschedule||promotionId?{promotionVersionId:promotionId||null}:{}),
         ...(voucherId && !removeVoucher ? { voucherId } : {}),
         ...(work && !reschedule ? { customerId } : {}),
         ...(reschedule
@@ -285,13 +289,13 @@ export function BookingForm({
                 ))}
               </select>
             </Field>
-            <Field label="Бесплатное посещение">
+            <Field label="Награда программы (необязательно)">
               <select
                 value={rewardId}
                 disabled={!!old.data?.loyaltyRewardId}
                 onChange={(e) => {
                   setRewardId(e.target.value);
-                  if (e.target.value) setVoucherId("");
+                  if (e.target.value){setVoucherId("");setPromotionId('');}
                 }}
               >
                 <option value="">Обычная запись</option>
@@ -302,7 +306,7 @@ export function BookingForm({
                 )}
                 {availableRewards.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.serviceName} · бесплатно
+                    {r.serviceName} · {r.rewardType==='fixed'?`−${money(r.fixedDiscountMinor)}`:r.rewardType==='percent'?`−${r.discountPercent}%`:`${r.remainingVisits} бесплатн. посещ.`}
                   </option>
                 ))}
               </select>
@@ -312,9 +316,9 @@ export function BookingForm({
             )}
             <Field label="Купон (необязательно)">
               <select
-                disabled={!!rewardId}
+                disabled={!!rewardId||!!promotionId}
                 value={voucherId}
-                onChange={(e) => setVoucherId(e.target.value)}
+                onChange={(e) => {setVoucherId(e.target.value);if(e.target.value){setRewardId('');setPromotionId('');}}}
               >
                 <option value="">Без купона</option>
                 {old.data?.appliedVoucherId && (
@@ -325,16 +329,17 @@ export function BookingForm({
                 {vouchers.data?.items
                   .filter(
                     (v) =>
-                      !v.targetTenantId ||
-                      v.targetTenantId === selectedSalon?.id,
+                      (v.rewardType!=='free_visits'||(v.remainingVisits??0)>v.reservedVisits) &&
+                      (!v.targetTenantId || v.targetTenantId === selectedSalon?.id),
                   )
                   .map((v) => (
                     <option key={v.id} value={v.id}>
-                      −{money(v.discountMinor)} · до {dateTime(v.expiresAt)}
+                      {v.rewardType==='percent'?`−${v.discountPercent}%`:v.rewardType==='free_visits'?`${v.remainingVisits} бесплатн. посещ.`:`−${money(v.discountMinor)}`} · {v.expiresAt?`до ${dateTime(v.expiresAt)}`:'без срока'}
                     </option>
                   ))}
               </select>
             </Field>
+            <Field label="Временная акция (необязательно)"><select value={promotionId} disabled={!!rewardId||!!voucherId} onChange={e=>{setPromotionId(e.target.value);if(e.target.value){setRewardId('');setVoucherId('');}}}><option value="">Без акции</option>{promotions.data?.items.filter(v=>v.providerTenantId===selectedSalon?.id&&v.serviceIds.includes(serviceId)).map(v=><option key={v.id} value={v.id}>{v.title} · {v.discountType==='percent'?`−${v.discountPercent}%`:`−${money(v.fixedDiscountMinor)}`}</option>)}</select></Field>
           </Load>
           <div className="step-title">
             <span>2</span>
