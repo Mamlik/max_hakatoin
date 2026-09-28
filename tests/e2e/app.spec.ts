@@ -474,3 +474,91 @@ test("waitlist offers the free slots it refuses to queue for", async ({
     href!.split("date=")[1]!,
   );
 });
+
+test("the timezone carousel keeps the chosen zone on screen", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Владелец · Линия Управление студией волос и партнёрствами",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page.locator(".timezone-picker").waitFor();
+
+  const offscreen = async () =>
+    await page.evaluate(() => {
+      const strip = document.querySelector<HTMLElement>(".timezone-picker")!;
+      const chosen = strip.querySelector("input:checked")!
+        .parentElement as HTMLElement;
+      const view = strip.getBoundingClientRect();
+      const item = chosen.getBoundingClientRect();
+      return item.left < view.left - 1 || item.right > view.right + 1
+        ? chosen.innerText.replace(/\s+/g, " ").trim()
+        : null;
+    });
+
+  await page.locator(".timezone-picker input").first().focus();
+  const lost: string[] = [];
+  for (let step = 0; step < 10; step++) {
+    await page.keyboard.press("ArrowRight");
+    const missing = await offscreen();
+    if (missing) lost.push(missing);
+  }
+  expect(lost).toEqual([]);
+  expect(await offscreen()).toBeNull();
+});
+
+test("a long salon name never pushes the workspace off screen", async ({
+  page,
+}) => {
+  const long = "Суперэкстрамегапарикмахерскаястудияквинтэссенция";
+  const original = "Линия · студия волос";
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Владелец · Линия Управление студией волос и партнёрствами",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+
+  const name = page.getByLabel("Название");
+  await name.fill(long);
+  await page
+    .getByRole("button", { name: "Сохранить", exact: true })
+    .first()
+    .click();
+  try {
+    await expect(page.locator(".topbar")).toContainText(long.slice(0, 12));
+    for (const screen of ["Журнал", "Клиенты", "Календарь"]) {
+      await page.getByRole("link", { name: screen, exact: true }).click();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+    }
+  } finally {
+    await page.getByRole("link", { name: "Настройки", exact: true }).click();
+    await page.getByLabel("Название").fill(original);
+    await page
+      .getByRole("button", { name: "Сохранить", exact: true })
+      .first()
+      .click();
+    await expect(page.locator(".topbar")).toContainText(original);
+  }
+});
