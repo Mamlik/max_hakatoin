@@ -176,6 +176,7 @@ export function SettingsPage() {
                           src={entry.data.qrDataUrl}
                         />
                         <input
+                          className="link-field"
                           aria-label="Публичная ссылка салона"
                           readOnly
                           value={entry.data.url}
