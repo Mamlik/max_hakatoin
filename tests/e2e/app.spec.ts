@@ -468,11 +468,22 @@ test("waitlist offers the free slots it refuses to queue for", async ({
 
   const offered = page.locator(".free-slots .slots-grid a");
   await expect(offered.first()).toBeVisible();
-  const href = await offered.first().getAttribute("href");
+  const href = new URL(
+    (await offered.first().getAttribute("href"))!,
+    "http://localhost",
+  );
+  const wanted = (await offered.first().locator("strong").innerText()).trim();
   await offered.first().click();
   await expect(page.locator("main input[type=date]").first()).toHaveValue(
-    href!.split("date=")[1]!,
+    href.searchParams.get("date")!,
   );
+
+  const chosen = page.locator(".slots-grid button.selected");
+  await expect(chosen).toHaveCount(1);
+  await expect(chosen.locator("strong")).toHaveText(wanted);
+  await expect(
+    page.getByRole("button", { name: "Подтвердить запись", exact: true }),
+  ).toBeVisible();
 });
 
 test("the timezone carousel keeps the chosen zone on screen", async ({

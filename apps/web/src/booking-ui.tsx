@@ -125,6 +125,23 @@ export function BookingForm({
         : `/public/salons/${code}/slots?${slotQuery}`
     : null;
   const slots = useApi<Items<Slot>>(slotPath);
+  // Из «Живого окна» приходят со ссылкой на конкретный слот — человек его уже
+  // выбрал, искать то же время второй раз в сетке ему незачем.
+  const [wanted, setWanted] = useState(
+    params.get("at")
+      ? { startAt: params.get("at")!, staffId: params.get("staff") ?? "" }
+      : null,
+  );
+  useEffect(() => {
+    if (!wanted || !slots.data) return;
+    const match = slots.data.items.find(
+      (s) =>
+        s.startAt === wanted.startAt &&
+        (!wanted.staffId || s.staffId === wanted.staffId),
+    );
+    setWanted(null);
+    if (match) void getQuote(match);
+  }, [wanted, slots.data]);
   useEffect(() => {
     setSelectedSlot(undefined);
     setQuote(undefined);
