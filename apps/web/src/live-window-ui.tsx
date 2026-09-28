@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, refreshData, useApi } from "./api";
+import { ApiError, api, refreshData, useApi } from "./api";
 import { BackLink, Badge, ChoiceGroup, Empty, Field, Load, PageTitle, dateTime, dayISO, useAction } from "./ui";
-import type { Catalog, Items, LiveWindowOffer, Salon, WaitlistRequest } from "./types";
+import type { Catalog, Items, LiveWindowOffer, Salon, Slot, WaitlistRequest } from "./types";
 
 const weekdays = [
   [1, "Пн"], [2, "Вт"], [3, "Ср"], [4, "Чт"], [5, "Пт"], [6, "Сб"], [7, "Вс"],
@@ -43,15 +43,25 @@ export function WaitlistForm() {
   const [start,setStart] = useState("09:00");
   const [end,setEnd] = useState("21:00");
   const [notice,setNotice] = useState(60);
+  // Сервер отказывает в ожидании, когда время и так свободно, и присылает его списком.
+  const [freeSlots,setFreeSlots] = useState<Slot[]>([]);
   const action = useAction();
   const availableStaff = useMemo(() => catalog.data?.staff.filter((staff) => staff.serviceIds.includes(serviceId)) ?? [],[catalog.data,serviceId]);
   async function submit() {
     if (!salon.data || !serviceId || !days.length) return;
+    setFreeSlots([]);
     await action.run(async () => {
-      await api("/me/waitlist-requests","POST",{
-        tenantId:salon.data!.id,serviceId,staffIds,dateFrom,dateTo,weekdays:days,dailyStartLocal:start,dailyEndLocal:end,minimumNoticeMinutes:notice,
-        ...(params.get("linked") ? {linkedBookingId:params.get("linked")} : {}),consentVersion:"live-window-v1",consentSource:"mini_app",
-      });
+      try {
+        await api("/me/waitlist-requests","POST",{
+          tenantId:salon.data!.id,serviceId,staffIds,dateFrom,dateTo,weekdays:days,dailyStartLocal:start,dailyEndLocal:end,minimumNoticeMinutes:notice,
+          ...(params.get("linked") ? {linkedBookingId:params.get("linked")} : {}),consentVersion:"live-window-v1",consentSource:"mini_app",
+        });
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === "SLOTS_AVAILABLE") {
+          setFreeSlots(((cause.details as {slots?:Slot[]}).slots ?? []).slice(0,12));
+        }
+        throw cause;
+      }
       refreshData(); navigate("/me/waitlist");
     },"Запрос создан");
   }
@@ -67,6 +77,7 @@ export function WaitlistForm() {
         <ChoiceGroup label="Дни недели"><div className="inline-actions">{weekdays.map(([number,label])=><label className="check" key={number}><input type="checkbox" checked={days.includes(number)} onChange={(event)=>setDays((old)=>event.target.checked?[...old,number]:old.filter((day)=>day!==number))}/><span>{label}</span></label>)}</div></ChoiceGroup>
         <div className="two-columns"><Field label="Не раньше"><input type="time" value={start} onChange={(event)=>setStart(event.target.value)}/></Field><Field label="Не позже"><input type="time" value={end} onChange={(event)=>setEnd(event.target.value)}/></Field></div>
         <Field label="Минимум времени до визита"><select value={notice} onChange={(event)=>setNotice(Number(event.target.value))}><option value={60}>1 час</option><option value={120}>2 часа</option><option value={360}>6 часов</option><option value={1440}>1 день</option></select></Field>
+        {!!freeSlots.length && <div className="panel free-slots"><h3>Это время свободно прямо сейчас</h3><p className="small muted">Ждать не нужно — выберите любое и записывайтесь.</p><div className="slots-grid">{freeSlots.map((slot)=><Link key={`${slot.startAt}:${slot.staffId}`} to={`/s/${code}/book?service=${serviceId}&date=${slot.startAt.slice(0,10)}`}><strong>{new Date(slot.startAt).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",timeZone:slot.timezone})}</strong><small>{new Date(slot.startAt).toLocaleDateString("ru-RU",{day:"numeric",month:"short",timeZone:slot.timezone})} · {slot.staffName}</small></Link>)}</div></div>}
         <div className="notice">Это запрос ожидания, а не запись. Если время освободится, бот MAX пришлёт одно предложение с ограниченным сроком. Слот останется доступен другим клиентам до подтверждения.</div>
         <button className="button primary" disabled={action.busy || !serviceId || !days.length} onClick={()=>void submit()}>{action.busy?"Создаём…":"Создать запрос"}</button>
       </section>
@@ -98,5 +109,5 @@ export function LiveWindowWorkPage() {
   const action=useAction();
   const [draft,setDraft]=useState<Settings>();
   const value=draft??settings.data;
-  return <><PageTitle eyebrow="АВТОМАТИЧЕСКОЕ ЗАПОЛНЕНИЕ ОТМЕН" title="Живое окно" description="FIFO-очередь предлагает отменённый интервал одному подходящему клиенту за раз." />{action.feedback}<div className="stats-grid compact-stats"><div className="stat-card"><span>Активные запросы</span><strong>{summary.data?.activeRequests??"—"}</strong></div><div className="stat-card"><span>Окна в работе</span><strong>{summary.data?.activeWindows??"—"}</strong></div><div className="stat-card"><span>Заполнено</span><strong>{summary.data?.filledWindows??"—"}</strong></div></div><Load {...settings}>{value&&<section className="panel"><h2>Настройки</h2><label className="check"><input type="checkbox" checked={value.enabled} onChange={(event)=>setDraft({...value,enabled:event.target.checked})}/><span>Включить автоматические предложения после отмены</span></label><label className="check"><input type="checkbox" checked={value.paused} onChange={(event)=>setDraft({...value,paused:event.target.checked})}/><span>Операционная пауза</span></label><div className="two-columns"><Field label="TTL предложения"><input type="number" min={5} max={30} value={value.offerTtlMinutes} onChange={(event)=>setDraft({...value,offerTtlMinutes:Number(event.target.value)})}/></Field><Field label="Минимум до визита"><input type="number" min={0} value={value.minimumNoticeMinutes} onChange={(event)=>setDraft({...value,minimumNoticeMinutes:Number(event.target.value)})}/></Field><Field label="Сообщения с"><input type="time" value={value.quietStart.slice(0,5)} onChange={(event)=>setDraft({...value,quietStart:event.target.value})}/></Field><Field label="Сообщения до"><input type="time" value={value.quietEnd.slice(0,5)} onChange={(event)=>setDraft({...value,quietEnd:event.target.value})}/></Field></div><div className="notice">После включения предложения отправляются автоматически. Администратор не может менять FIFO или выбирать клиента вручную.</div><button className="button primary" disabled={action.busy} onClick={()=>void action.run(async()=>{await api(`/work/${t}/live-window/settings`,"PATCH",{expectedVersion:value.version,enabled:value.enabled,paused:value.paused,pauseReason:value.paused?"Операционная пауза":null,offerTtlMinutes:value.offerTtlMinutes,minimumNoticeMinutes:value.minimumNoticeMinutes,quietStart:value.quietStart.slice(0,5),quietEnd:value.quietEnd.slice(0,5)});setDraft(undefined);refreshData()},"Настройки сохранены")}>Сохранить</button></section>}</Load><h2>Последние окна</h2><Load {...windows}>{windows.data?.items.length?<div className="data-list">{windows.data.items.map((window)=><div className="history-row" key={window.id}><div><strong>{window.serviceName} · {window.staffName}</strong><p>{dateTime(window.startAt,window.timezoneSnapshot)} · {window.offers.length} предлож.</p></div><Badge status={window.status}/>{["detected","matching","offering"].includes(window.status)&&<button className="text-button" onClick={()=>void action.run(()=>api(`/work/${t}/live-window/windows/${window.id}/close`,"POST",{expectedVersion:window.version,reason:"Закрыто сотрудником"}),"Окно закрыто")}>Закрыть</button>}</div>)}</div>:<Empty title="Окон пока нет" text="Они появятся после отмены или обычного переноса подтверждённой записи."/>}</Load></>;
+  return <><PageTitle eyebrow="АВТОМАТИЧЕСКОЕ ЗАПОЛНЕНИЕ ОТМЕН" title="Живое окно" description="FIFO-очередь предлагает отменённый интервал одному подходящему клиенту за раз." />{action.feedback}<div className="stats-grid compact-stats"><div className="stat-card"><span>Активные запросы</span><strong>{summary.data?.activeRequests??"—"}</strong></div><div className="stat-card"><span>Окна в работе</span><strong>{summary.data?.activeWindows??"—"}</strong></div><div className="stat-card"><span>Заполнено</span><strong>{summary.data?.filledWindows??"—"}</strong></div></div><Load {...settings}>{value&&<section className="panel"><h2>Настройки</h2><label className="check"><input type="checkbox" checked={value.enabled} onChange={(event)=>setDraft({...value,enabled:event.target.checked})}/><span>Включить автоматические предложения после отмены</span></label><label className="check"><input type="checkbox" checked={value.paused} onChange={(event)=>setDraft({...value,paused:event.target.checked})}/><span>Операционная пауза</span></label><div className="two-columns"><Field label="Время на ответ" hint="минут, от 5 до 30"><input type="number" min={5} max={30} value={value.offerTtlMinutes} onChange={(event)=>setDraft({...value,offerTtlMinutes:Number(event.target.value)})}/></Field><Field label="Минимальный запас до визита" hint="минут, не больше 7 дней"><input type="number" min={0} max={10080} value={value.minimumNoticeMinutes} onChange={(event)=>setDraft({...value,minimumNoticeMinutes:Number(event.target.value)})}/></Field><Field label="Сообщения с"><input type="time" value={value.quietStart.slice(0,5)} onChange={(event)=>setDraft({...value,quietStart:event.target.value})}/></Field><Field label="Сообщения до"><input type="time" value={value.quietEnd.slice(0,5)} onChange={(event)=>setDraft({...value,quietEnd:event.target.value})}/></Field></div><div className="notice">После включения предложения отправляются автоматически. Администратор не может менять FIFO или выбирать клиента вручную.</div><button className="button primary" disabled={action.busy} onClick={()=>void action.run(async()=>{await api(`/work/${t}/live-window/settings`,"PATCH",{expectedVersion:value.version,enabled:value.enabled,paused:value.paused,pauseReason:value.paused?"Операционная пауза":null,offerTtlMinutes:value.offerTtlMinutes,minimumNoticeMinutes:value.minimumNoticeMinutes,quietStart:value.quietStart.slice(0,5),quietEnd:value.quietEnd.slice(0,5)});setDraft(undefined);refreshData()},"Настройки сохранены")}>Сохранить</button></section>}</Load><h2>Последние окна</h2><Load {...windows}>{windows.data?.items.length?<div className="data-list">{windows.data.items.map((window)=><div className="history-row" key={window.id}><div><strong>{window.serviceName} · {window.staffName}</strong><p>{dateTime(window.startAt,window.timezoneSnapshot)} · {window.offers.length} предлож.</p></div><Badge status={window.status}/>{["detected","matching","offering"].includes(window.status)&&<button className="text-button" onClick={()=>void action.run(()=>api(`/work/${t}/live-window/windows/${window.id}/close`,"POST",{expectedVersion:window.version,reason:"Закрыто сотрудником"}),"Окно закрыто")}>Закрыть</button>}</div>)}</div>:<Empty title="Окон пока нет" text="Они появятся после отмены или обычного переноса подтверждённой записи."/>}</Load></>;
 }

@@ -45,8 +45,12 @@ function App() {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const tenantId = location.pathname.match(/^\/work\/([^/]+)/)?.[1];
-  const member = auth.me?.memberships.find((m) => m.tenantId === tenantId);
+  // A /work/<id> path can outlive the access that put it there: switching accounts keeps
+  // the old URL, and membership can be revoked. Treat it as a workspace only while the
+  // signed-in person actually belongs to it, so nobody sees someone else's menu.
+  const pathTenantId = location.pathname.match(/^\/work\/([^/]+)/)?.[1];
+  const member = auth.me?.memberships.find((m) => m.tenantId === pathTenantId);
+  const tenantId = member ? pathTenantId : undefined;
   // A deep link resolves to a path while AuthProvider sits outside the router,
   // so the router performs the navigation once the path is known.
   React.useEffect(() => {
@@ -76,6 +80,8 @@ function App() {
         <p>Собираем ваши салоны…</p>
       </div>
     );
+  if (auth.me && pathTenantId && !member)
+    return <Navigate to="/me/bookings" replace />;
   if (!auth.me)
     return (
       <div className="login-page">

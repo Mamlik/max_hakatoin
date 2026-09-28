@@ -68,7 +68,7 @@ export function BookingForm({
   const [customerId, setCustomerId] = useState(params.get("customer") ?? ""),
     [serviceId, setServiceId] = useState(params.get("service") ?? ""),
     [staffId, setStaffId] = useState(""),
-    [date, setDate] = useState(dayISO(1)),
+    [date, setDate] = useState(params.get("date") ?? dayISO(1)),
     [voucherId, setVoucherId] = useState(params.get("voucher") ?? ""),
     [selectedSlot, setSelectedSlot] = useState<Slot>(),
     [quote, setQuote] = useState<Quote>(),

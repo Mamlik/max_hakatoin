@@ -413,3 +413,64 @@ test("master can replace their own storefront photo", async ({ page }) => {
   await expect(card.getByText("Фотография профиля обновлена", { exact: true })).toBeVisible();
   await expect(card.locator(".staff-avatar img")).toBeVisible();
 });
+
+// The server refuses a waitlist request while matching time is still free and returns
+// those slots. They must reach the client instead of a bare "время уже есть".
+test("waitlist offers the free slots it refuses to queue for", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Владелец · Линия Управление студией волос и партнёрствами",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  await workspace.selectOption(
+    (await workspace
+      .locator("option")
+      .filter({ hasText: "Линия" })
+      .getAttribute("value"))!,
+  );
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Живое окно", exact: true })
+    .click();
+  const enabled = page.locator("main input[type=checkbox]").first();
+  if (!(await enabled.isChecked())) await enabled.check();
+  await page.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByText("Настройки сохранены")).toBeVisible();
+  await page.getByRole("button", { name: "Выйти" }).click();
+  await expect(page.locator(".login-page")).toBeVisible();
+
+  await page
+    .getByRole("button", {
+      name: "Клиент Записаться, перенести визит, получить купон",
+    })
+    .click();
+  await expect(page.locator(".app-shell")).toBeVisible();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Салоны", exact: true })
+    .click();
+  await page.locator("main a").filter({ hasText: "Линия" }).first().click();
+  await page
+    .locator(".service-row")
+    .filter({ hasText: "Стрижка и укладка" })
+    .getByRole("link", { name: "Выбрать" })
+    .click();
+  await page
+    .locator("main a, main button")
+    .filter({ hasText: /освободится/i })
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Создать запрос" }).click();
+
+  const offered = page.locator(".free-slots .slots-grid a");
+  await expect(offered.first()).toBeVisible();
+  const href = await offered.first().getAttribute("href");
+  await offered.first().click();
+  await expect(page.locator("main input[type=date]").first()).toHaveValue(
+    href!.split("date=")[1]!,
+  );
+});
