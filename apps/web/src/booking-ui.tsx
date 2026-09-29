@@ -69,7 +69,7 @@ export function BookingForm({
   const [customerId, setCustomerId] = useState(params.get("customer") ?? ""),
     [serviceId, setServiceId] = useState(params.get("service") ?? ""),
     [staffId, setStaffId] = useState(""),
-    [date, setDate] = useState(dayISO(1)),
+    [date, setDate] = useState(params.get("date") ?? dayISO(1)),
     [voucherId, setVoucherId] = useState(params.get("voucher") ?? ""),
     [selectedSlot, setSelectedSlot] = useState<Slot>(),
     [quote, setQuote] = useState<Quote>(),
@@ -128,6 +128,23 @@ export function BookingForm({
         : `/public/salons/${code}/slots?${slotQuery}`
     : null;
   const slots = useApi<Items<Slot>>(slotPath);
+  // Из «Живого окна» приходят со ссылкой на конкретный слот — человек его уже
+  // выбрал, искать то же время второй раз в сетке ему незачем.
+  const [wanted, setWanted] = useState(
+    params.get("at")
+      ? { startAt: params.get("at")!, staffId: params.get("staff") ?? "" }
+      : null,
+  );
+  useEffect(() => {
+    if (!wanted || !slots.data) return;
+    const match = slots.data.items.find(
+      (s) =>
+        s.startAt === wanted.startAt &&
+        (!wanted.staffId || s.staffId === wanted.staffId),
+    );
+    setWanted(null);
+    if (match) void getQuote(match);
+  }, [wanted, slots.data]);
   useEffect(() => {
     setSelectedSlot(undefined);
     setQuote(undefined);
@@ -665,7 +682,7 @@ export function BookingPage({ work = false }: { work?: boolean }) {
     <>
       <BackLink
         to={work ? `/work/${t}/calendar` : "/me/bookings"}
-        label="В календарь"
+        label={work ? "В календарь" : "К моим записям"}
       />
       <PageTitle title="Карточка визита" description={data.data?.tenantName} />
       <Load {...data}>

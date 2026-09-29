@@ -1,4 +1,11 @@
-import { useState, type ReactNode, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type FormEvent,
+} from "react";
 import { Link } from "react-router-dom";
 import { api, refreshData } from "./api";
 export const money = (n?: number | null) =>
@@ -44,9 +51,31 @@ export function TimezonePicker({
 }: {
   defaultValue?: string;
 }) {
+  // Вариантов 11, в карусель влезает 3-4. Выбранный надо доводить до экрана:
+  // иначе владелец дальневосточного салона видит карусель, где ничего не
+  // выбрано, а стрелками с клавиатуры каждый второй вариант уходит за край
+  // (браузер везёт к фокусу скрытый radio нулевого размера, а не саму плашку).
+  const box = useRef<HTMLDivElement>(null);
+  const reveal = useCallback(() => {
+    const scroller = box.current;
+    const active = scroller?.querySelector("input:checked")?.parentElement;
+    if (!scroller || !active) return;
+    const view = scroller.getBoundingClientRect();
+    const item = active.getBoundingClientRect();
+    if (item.left >= view.left - 1 && item.right <= view.right + 1) return;
+    scroller.scrollLeft +=
+      item.left - view.left - (scroller.clientWidth - active.clientWidth) / 2;
+  }, []);
+  useEffect(reveal, [reveal, defaultValue]);
   return (
     <Field label="Часовой пояс" hint="Листайте по горизонтали и выберите свой регион.">
-      <div className="timezone-picker" role="radiogroup" aria-label="Часовой пояс">
+      <div
+        className="timezone-picker"
+        role="radiogroup"
+        aria-label="Часовой пояс"
+        ref={box}
+        onChange={reveal}
+      >
         {TIMEZONES.map(([value, offset, city]) => (
           <label key={value}>
             <input
@@ -227,10 +256,12 @@ export function Empty({
 export function Load({
   loading,
   error,
+  reload,
   children,
 }: {
   loading: boolean;
   error?: string;
+  reload?: () => void;
   children: ReactNode;
 }) {
   if (loading)
@@ -245,6 +276,14 @@ export function Load({
     return (
       <div className="notice error" role="alert">
         {error}
+        {reload && (
+          <div className="inline-actions">
+            {/* Без этого единственный выход из сбоя — уйти на другой экран. */}
+            <button className="button secondary compact" onClick={reload}>
+              Повторить
+            </button>
+          </div>
+        )}
       </div>
     );
   return <>{children}</>;

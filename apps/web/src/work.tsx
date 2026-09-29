@@ -85,6 +85,13 @@ function MasterPhotoCard({ tenantId }: { tenantId: string }) {
                 ? `★ ${profile.data.ratingAverage?.toLocaleString("ru-RU")} · ${plural(profile.data.ratingCount, "оценка", "оценки", "оценок")}`
                 : "Пока нет оценок"}
             </div>
+            {/* Витрина прячет рейтинг до трёх оценок — иначе мастер не поймёт,
+                почему видит у себя цифру, которой нет у клиентов. */}
+            {!!profile.data.ratingCount && profile.data.ratingCount < 3 && (
+              <p className="small muted">
+                Клиентам рейтинг показывается начиная с трёх оценок.
+              </p>
+            )}
           </div>
           <FilePick
             accept="image/jpeg,image/png,image/webp"

@@ -444,3 +444,163 @@ test("master can replace their own storefront photo", async ({ page }) => {
   await expect(card.getByText("Фотография профиля обновлена", { exact: true })).toBeVisible();
   await expect(card.locator(".staff-avatar img")).toBeVisible();
 });
+
+// The server refuses a waitlist request while matching time is still free and returns
+// those slots. They must reach the client instead of a bare "время уже есть".
+test("waitlist offers the free slots it refuses to queue for", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Владелец · Линия Управление студией волос и партнёрствами",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  await workspace.selectOption(
+    (await workspace
+      .locator("option")
+      .filter({ hasText: "Линия" })
+      .getAttribute("value"))!,
+  );
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Живое окно", exact: true })
+    .click();
+  const enabled = page.locator("main input[type=checkbox]").first();
+  if (!(await enabled.isChecked())) await enabled.check();
+  await page.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByText("Настройки сохранены")).toBeVisible();
+  await page.getByRole("button", { name: "Выйти" }).click();
+  await expect(page.locator(".login-page")).toBeVisible();
+
+  await page
+    .getByRole("button", {
+      name: "Клиент Записаться, перенести визит, получить купон",
+    })
+    .click();
+  await expect(page.locator(".app-shell")).toBeVisible();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Салоны", exact: true })
+    .click();
+  await page.locator("main a").filter({ hasText: "Линия" }).first().click();
+  await page
+    .locator(".service-row")
+    .filter({ hasText: "Стрижка и укладка" })
+    .getByRole("link", { name: "Выбрать" })
+    .click();
+  await page
+    .locator("main a, main button")
+    .filter({ hasText: /освободится/i })
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Создать запрос" }).click();
+
+  const offered = page.locator(".free-slots .slots-grid a");
+  await expect(offered.first()).toBeVisible();
+  const href = new URL(
+    (await offered.first().getAttribute("href"))!,
+    "http://localhost",
+  );
+  const wanted = (await offered.first().locator("strong").innerText()).trim();
+  await offered.first().click();
+  await expect(page.locator("main input[type=date]").first()).toHaveValue(
+    href.searchParams.get("date")!,
+  );
+
+  const chosen = page.locator(".slots-grid button.selected");
+  await expect(chosen).toHaveCount(1);
+  await expect(chosen.locator("strong")).toHaveText(wanted);
+  await expect(
+    page.getByRole("button", { name: "Подтвердить запись", exact: true }),
+  ).toBeVisible();
+});
+
+test("the timezone carousel keeps the chosen zone on screen", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Владелец · Линия Управление студией волос и партнёрствами",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page.locator(".timezone-picker").waitFor();
+
+  const offscreen = async () =>
+    await page.evaluate(() => {
+      const strip = document.querySelector<HTMLElement>(".timezone-picker")!;
+      const chosen = strip.querySelector("input:checked")!
+        .parentElement as HTMLElement;
+      const view = strip.getBoundingClientRect();
+      const item = chosen.getBoundingClientRect();
+      return item.left < view.left - 1 || item.right > view.right + 1
+        ? chosen.innerText.replace(/\s+/g, " ").trim()
+        : null;
+    });
+
+  await page.locator(".timezone-picker input").first().focus();
+  const lost: string[] = [];
+  for (let step = 0; step < 10; step++) {
+    await page.keyboard.press("ArrowRight");
+    const missing = await offscreen();
+    if (missing) lost.push(missing);
+  }
+  expect(lost).toEqual([]);
+  expect(await offscreen()).toBeNull();
+});
+
+test("a long salon name never pushes the workspace off screen", async ({
+  page,
+}) => {
+  const long = "Суперэкстрамегапарикмахерскаястудияквинтэссенция";
+  const original = "Линия · студия волос";
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Владелец · Линия Управление студией волос и партнёрствами",
+    })
+    .click();
+  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const option = await workspace
+    .locator("option")
+    .filter({ hasText: "Линия" })
+    .getAttribute("value");
+  await workspace.selectOption(option!);
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+
+  const name = page.getByLabel("Название");
+  await name.fill(long);
+  await page
+    .getByRole("button", { name: "Сохранить", exact: true })
+    .first()
+    .click();
+  try {
+    await expect(page.locator(".topbar")).toContainText(long.slice(0, 12));
+    for (const screen of ["Журнал", "Клиенты", "Календарь"]) {
+      await page.getByRole("link", { name: screen, exact: true }).click();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+    }
+  } finally {
+    await page.getByRole("link", { name: "Настройки", exact: true }).click();
+    await page.getByLabel("Название").fill(original);
+    await page
+      .getByRole("button", { name: "Сохранить", exact: true })
+      .first()
+      .click();
+    await expect(page.locator(".topbar")).toContainText(original);
+  }
+});

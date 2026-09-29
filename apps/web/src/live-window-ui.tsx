@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, refreshData, useApi, useAuth } from "./api";
+import { ApiError, api, refreshData, useApi, useAuth } from "./api";
 import { BackLink, Badge, ChoiceGroup, Empty, Field, Load, PageTitle, dateTime, dayISO, useAction } from "./ui";
-import type { Catalog, Items, LiveWindowOffer, Salon, WaitlistRequest } from "./types";
+import type { Catalog, Items, LiveWindowOffer, Salon, Slot, WaitlistRequest } from "./types";
 
 const weekdays = [
   [1, "Пн"], [2, "Вт"], [3, "Ср"], [4, "Чт"], [5, "Пт"], [6, "Сб"], [7, "Вс"],
@@ -43,15 +43,24 @@ export function WaitlistForm() {
   const [start,setStart] = useState("09:00");
   const [end,setEnd] = useState("21:00");
   const [notice,setNotice] = useState(60);
+  const [freeSlots,setFreeSlots] = useState<Slot[]>([]);
   const action = useAction();
   const availableStaff = useMemo(() => catalog.data?.staff.filter((staff) => staff.serviceIds.includes(serviceId)) ?? [],[catalog.data,serviceId]);
   async function submit() {
     if (!salon.data || !serviceId || !days.length) return;
+    setFreeSlots([]);
     await action.run(async () => {
-      await api("/me/waitlist-requests","POST",{
-        tenantId:salon.data!.id,serviceId,staffIds,dateFrom,dateTo,weekdays:days,dailyStartLocal:start,dailyEndLocal:end,minimumNoticeMinutes:notice,
-        ...(params.get("linked") ? {linkedBookingId:params.get("linked")} : {}),consentVersion:"live-window-v1",consentSource:"mini_app",
-      });
+      try {
+        await api("/me/waitlist-requests","POST",{
+          tenantId:salon.data!.id,serviceId,staffIds,dateFrom,dateTo,weekdays:days,dailyStartLocal:start,dailyEndLocal:end,minimumNoticeMinutes:notice,
+          ...(params.get("linked") ? {linkedBookingId:params.get("linked")} : {}),consentVersion:"live-window-v1",consentSource:"mini_app",
+        });
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === "SLOTS_AVAILABLE") {
+          setFreeSlots(((cause.details as {slots?:Slot[]}).slots ?? []).slice(0,12));
+        }
+        throw cause;
+      }
       refreshData(); navigate("/me/waitlist");
     },"Запрос создан");
   }
@@ -67,6 +76,7 @@ export function WaitlistForm() {
         <ChoiceGroup label="Дни недели"><div className="inline-actions">{weekdays.map(([number,label])=><label className="check" key={number}><input type="checkbox" checked={days.includes(number)} onChange={(event)=>setDays((old)=>event.target.checked?[...old,number]:old.filter((day)=>day!==number))}/><span>{label}</span></label>)}</div></ChoiceGroup>
         <div className="two-columns"><Field label="Не раньше"><input type="time" value={start} onChange={(event)=>setStart(event.target.value)}/></Field><Field label="Не позже"><input type="time" value={end} onChange={(event)=>setEnd(event.target.value)}/></Field></div>
         <Field label="Минимум времени до визита"><select value={notice} onChange={(event)=>setNotice(Number(event.target.value))}><option value={60}>1 час</option><option value={120}>2 часа</option><option value={360}>6 часов</option><option value={1440}>1 день</option></select></Field>
+        {!!freeSlots.length && <div className="panel free-slots"><h3>Это время свободно прямо сейчас</h3><p className="small muted">Ждать не нужно — выберите любое и записывайтесь.</p><div className="slots-grid">{freeSlots.map((slot)=><Link key={`${slot.startAt}:${slot.staffId}`} to={`/s/${code}/book?service=${serviceId}&date=${new Date(slot.startAt).toLocaleDateString("en-CA",{timeZone:slot.timezone})}&at=${encodeURIComponent(slot.startAt)}&staff=${slot.staffId}`}><strong>{new Date(slot.startAt).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",timeZone:slot.timezone})}</strong><small>{new Date(slot.startAt).toLocaleDateString("ru-RU",{day:"numeric",month:"short",timeZone:slot.timezone})} · {slot.staffName}</small></Link>)}</div></div>}
         <div className="notice">Это запрос ожидания, а не запись. Если время освободится, бот MAX пришлёт одно предложение с ограниченным сроком. Слот останется доступен другим клиентам до подтверждения.</div>
         <button className="button primary" disabled={action.busy || !serviceId || !days.length} onClick={()=>void submit()}>{action.busy?"Создаём…":"Создать запрос"}</button>
       </section>
