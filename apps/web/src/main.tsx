@@ -233,6 +233,27 @@ function App() {
   ].map(([p, i, l]) => [`/work/${tenantId}/${p}`, i, l]);
   return (
     <div className={`app-shell ${tenantId ? "work-shell" : "personal-shell"}`}>
+      <header className="mobile-appbar">
+        <button type="button" className="mobile-back" aria-label="Назад" onClick={() => {
+          if (Number(window.history.state?.idx ?? 0) > 0) navigate(-1);
+          else navigate("/me/salons");
+        }}><Icon name="arrow" /></button>
+        <Link to="/me/salons" className="mobile-wordmark" aria-label="Рядом — мои места">ря<span>дом</span></Link>
+        <select
+          className="mobile-workspace-select"
+          aria-label="Выбрать кабинет"
+          value={tenantId ?? "personal"}
+          onChange={(event) => {
+            if (event.target.value === "change-role") { auth.logout(); return; }
+            navigate(event.target.value === "personal" ? "/me/salons" : `/work/${event.target.value}/calendar`);
+          }}
+        >
+          <option value="personal">Личный</option>
+          {auth.me.memberships.map((membership) => <option key={membership.id} value={membership.tenantId}>{membership.tenantName} · {labels[membership.role]}</option>)}
+          {auth.demo && <option value="change-role">Сменить роль…</option>}
+        </select>
+        {auth.demo && <button type="button" className="mobile-role-switch" aria-label="Сменить роль" title="Сменить роль" onClick={auth.logout}><Icon name="logout" /></button>}
+      </header>
       <aside className="sidebar">
         <Link to="/me/salons" className="wordmark">
           <span className="brand-mark">р.</span>рядом
@@ -306,15 +327,11 @@ function App() {
         <header className="topbar">
           <span>
             {tenantId
-              ? (member?.tenantName ?? "Рабочий кабинет")
-              : "Личное пространство"}
+              ? `${member?.tenantName ?? "Салон"} / ${labels[member?.role ?? "owner"]}`
+              : "Для вас"}
           </span>
           <div>
-            {auth.demo && <span className="demo-tag">ДЕМО</span>}
-            <span className="max-connected">
-              <i />
-              MAX
-            </span>
+            <span className="topbar-date">{new Date().toLocaleDateString("ru-RU", {day:"numeric",month:"long",year:"numeric"})}</span>
             <Link to="/me/events" className="icon-button" aria-label="События">
               <Icon name="bell" />
             </Link>

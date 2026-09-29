@@ -106,7 +106,6 @@ export function BookingCard({
   );
 }
 export function BookingsPage() {
-  const { me } = useAuth();
   const [state, setState] = useState("upcoming"),
     [tenant, setTenant] = useState(""),
     [day, setDay] = useState("");
@@ -118,9 +117,9 @@ export function BookingsPage() {
   return (
     <>
       <PageTitle
-        eyebrow="ХОРОШИЙ ДЕНЬ НАЧИНАЕТСЯ С ЗАБОТЫ О СЕБЕ"
-        title={`Ваши планы, ${me?.user.displayName.split(" ")[0] ?? ""}`}
-        description="Все записи в любимые салоны — в одном месте."
+        eyebrow="ВАШЕ ВРЕМЯ"
+        title="Мои записи"
+        description="Ближайшие визиты и история во всех салонах."
         action={
           <Link className="button primary" to="/me/salons">
             <Icon name="plus" />
@@ -128,86 +127,35 @@ export function BookingsPage() {
           </Link>
         }
       />
-      <div className="welcome-banner">
-        <div>
-          <span className="eyebrow">В ВАШЕМ РИТМЕ</span>
-          <h2>Найдите время для себя</h2>
-          <p>
-            Выберите салон, мастера и удобное время.
-            <br />
-            Остальное мы сохраним в вашем календаре.
-          </p>
-          <Link to="/me/salons">
-            Посмотреть салоны <Icon name="arrow" size={15} />
-          </Link>
-        </div>
-        <div className="banner-art" aria-hidden="true">
-          <div className="art-ring" />
-          <div className="art-ticket">
-            <span>ВАШЕ ВРЕМЯ</span>
-            <strong>для себя ✦</strong>
-            <i>рядом</i>
-          </div>
-          <span className="art-star">✳</span>
-        </div>
-      </div>
-      <div className="section-head">
-        <div className="tabs">
+      <div className="booking-toolbar">
+        <div className="tabs" role="tablist" aria-label="Период записей">
           <button
+            type="button"
+            role="tab"
+            aria-selected={state === "upcoming"}
             className={state === "upcoming" ? "selected" : ""}
             onClick={() => setState("upcoming")}
           >
-            Предстоящие
+            Ближайшие
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={state === "history"}
             className={state === "history" ? "selected" : ""}
             onClick={() => setState("history")}
           >
             История
           </button>
         </div>
-        <select
-          aria-label="Фильтр по салону"
-          value={tenant}
-          onChange={(e) => setTenant(e.target.value)}
-        >
-          <option value="">Все салоны</option>
-          {salons.data?.items.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="day-strip">
-        <button className={!day ? "selected" : ""} onClick={() => setDay("")}>
-          Все
-          <br />
-          <strong>дни</strong>
-        </button>
-        {Array.from({ length: 7 }, (_, i) => {
-          const d = dayISO(i);
-          return (
-            <button
-              key={d}
-              className={day === d ? "selected" : ""}
-              onClick={() => setDay(d)}
-            >
-              <span>
-                {new Date(`${d}T12:00`).toLocaleDateString("ru-RU", {
-                  weekday: "short",
-                })}
-              </span>
-              <strong>{d.slice(-2)}</strong>
-            </button>
-          );
-        })}
-        <input
-          aria-label="Выбрать дату"
-          type="date"
-          value={day}
-          onChange={(e) => setDay(e.target.value)}
-        />
+        <div className="booking-filters">
+          <select aria-label="Фильтр по салону" value={tenant} onChange={(e) => setTenant(e.target.value)}>
+            <option value="">Все салоны</option>
+            {salons.data?.items.map((salon) => <option key={salon.id} value={salon.id}>{salon.name}</option>)}
+          </select>
+          <input aria-label="Выбрать дату" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+          {day && <button type="button" className="text-button" onClick={() => setDay("")}>Сбросить дату</button>}
+        </div>
       </div>
       <Load {...data}>
         {data.data?.items.length ? (
@@ -857,6 +805,14 @@ function SalonPreferences({ salon }: { salon: Salon }) {
 export function ProfilePage() {
   const auth = useAuth();
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+  const [selectedSalon, setSelectedSalon] = useState<string | null>(null);
+  const [remoteSelectedSalon, setRemoteSelectedSalon] = useState<Salon | null>(null);
+  const [salonPickerOpen, setSalonPickerOpen] = useState(false);
+  const [salonQuery, setSalonQuery] = useState("");
+  const [extraSalons, setExtraSalons] = useState<Salon[]>([]);
+  const [nextCatalogCursor, setNextCatalogCursor] = useState<string | null | undefined>(undefined);
+  const [loadingMoreSalons, setLoadingMoreSalons] = useState(false);
+  const [moreSalonsError, setMoreSalonsError] = useState("");
   const selectTheme = (value: "light" | "dark") => {
     setTheme(value);
     document.documentElement.dataset.theme = value;
@@ -864,16 +820,40 @@ export function ProfilePage() {
   };
   const data = useApi<Items<Salon>>("/me/salons");
   const all = useApi<Items<Salon>>("/public/salons");
+  const searchedSalons = useApi<Items<Salon>>(salonQuery.trim() ? `/public/salons?query=${encodeURIComponent(salonQuery.trim())}` : null);
   const a = useAction();
   const salons = [
     ...(data.data?.items ?? []),
     ...(all.data?.items ?? []),
+    ...extraSalons,
+    ...(remoteSelectedSalon ? [remoteSelectedSalon] : []),
   ].filter((v, i, s) => s.findIndex((t) => t.id === v.id) === i);
+  const catalogCursor = nextCatalogCursor === undefined ? all.data?.nextCursor : nextCatalogCursor;
+  const loadMoreSalons = async () => {
+    if (!catalogCursor || loadingMoreSalons) return;
+    setLoadingMoreSalons(true);
+    setMoreSalonsError("");
+    try {
+      const page = await api<Items<Salon>>(`/public/salons?limit=100&cursor=${encodeURIComponent(catalogCursor)}`);
+      setExtraSalons((previous) => [...previous, ...page.items]);
+      setNextCatalogCursor(page.nextCursor);
+    } catch (error) {
+      setMoreSalonsError(error instanceof Error ? error.message : "Не удалось загрузить салоны");
+    } finally {
+      setLoadingMoreSalons(false);
+    }
+  };
+  const activeSalonId = selectedSalon === "all" ? "all" : salons.some((salon) => salon.id === selectedSalon) ? selectedSalon : salons[0]?.id ?? "all";
+  const visibleSalons = activeSalonId === "all" ? salons : salons.filter((salon) => salon.id === activeSalonId);
+  const matchingSalons = [...salons, ...(searchedSalons.data?.items ?? [])]
+    .filter((salon, index, allSalons) => allSalons.findIndex((item) => item.id === salon.id) === index)
+    .filter((salon) => salon.name.toLocaleLowerCase("ru-RU").includes(salonQuery.trim().toLocaleLowerCase("ru-RU")));
   return (
     <>
       <PageTitle
-        title="Профиль и уведомления"
-        description="Вы решаете, какие сообщения получать и в каких программах участвовать."
+        eyebrow="ВАШИ НАСТРОЙКИ"
+        title="Профиль и сообщения"
+        description="Сервисные сообщения и реклама настраиваются отдельно."
       />
       <section className="panel profile-theme"><h2>Тема оформления</h2>
         <div className="theme-options" role="group" aria-label="Тема оформления">
@@ -881,8 +861,33 @@ export function ProfilePage() {
           <button type="button" aria-pressed={theme === "dark"} className={theme === "dark" ? "selected" : ""} onClick={() => selectTheme("dark")}><span aria-hidden="true">☾</span> Тёмная</button>
         </div>
       </section>
-      <div className="profile-links"><Link to="/me/events">События</Link><Link to="/me/waitlist">Запросы «Живого окна»</Link><Link to="/me/offers">Предложения</Link><Link to="/create-salon">Создать салон</Link></div>
+      <div className="profile-links"><a href="#salon-settings">Настройки салонов</a><Link to="/me/events">События</Link><Link to="/me/waitlist">Запросы «Живого окна»</Link><Link to="/me/offers">Предложения</Link><Link to="/create-salon">Создать салон</Link></div>
       {!!auth.me?.memberships.length && <section className="panel"><h2>Рабочие кабинеты</h2><div className="profile-links">{auth.me.memberships.map((membership) => <Link key={membership.id} to={`/work/${membership.tenantId}/calendar`}>{membership.tenantName} · {membership.role === "owner" ? "владелец" : membership.role === "admin" ? "администратор" : "мастер"}</Link>)}</div></section>}
+      <section id="salon-settings" className="salon-settings-section">
+      <h2>Настройки по салонам</h2>
+      <div className="salon-picker">
+        <button type="button" className="salon-picker-trigger" aria-label="Выбрать салон для настроек" aria-expanded={salonPickerOpen} onClick={() => {setSalonPickerOpen(!salonPickerOpen);setSalonQuery("");}}>
+          <span>{activeSalonId === "all" ? "Все салоны" : salons.find((salon) => salon.id === activeSalonId)?.name ?? "Выберите салон"}</span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+        {salonPickerOpen && <div className="salon-picker-menu">
+          <input autoFocus type="search" aria-label="Поиск салона в настройках" placeholder="Найти салон" value={salonQuery} onChange={(event) => setSalonQuery(event.target.value)} onKeyDown={(event) => {if (event.key === "Escape") setSalonPickerOpen(false);}} />
+          <div className="salon-picker-options">
+            <button type="button" aria-pressed={activeSalonId === "all"} onClick={() => {setSelectedSalon("all");setSalonPickerOpen(false);}}>Все салоны <small>{salons.length}</small></button>
+            {matchingSalons.slice(0, 40).map((salon) => <button type="button" key={salon.id} aria-pressed={activeSalonId === salon.id} onClick={() => {setRemoteSelectedSalon(salon);setSelectedSalon(salon.id);setSalonPickerOpen(false);}}>{salon.name}</button>)}
+            {!matchingSalons.length && <p className="small muted">Салон не найден</p>}
+            {matchingSalons.length > 40 && <p className="small muted">Уточните поиск, чтобы увидеть остальные салоны.</p>}
+          </div>
+        </div>}
+      </div>
+      <div className="two-columns salon-preferences-grid">
+        {visibleSalons.map((s) => (
+          <SalonPreferences key={s.id} salon={s} />
+        ))}
+      </div>
+      {activeSalonId === "all" && catalogCursor && <button type="button" className="button secondary" disabled={loadingMoreSalons} onClick={() => void loadMoreSalons()}>{loadingMoreSalons ? "Загружаем…" : "Показать ещё салоны"}</button>}
+      {moreSalonsError && <div className="notice error" role="alert">{moreSalonsError}</div>}
+      </section>
       <div className="two-columns">
         <section className="panel">
           <h2>Ваш профиль</h2>
@@ -949,12 +954,6 @@ export function ProfilePage() {
             оператор.
           </p>
         </section>
-      </div>
-      <h2>Настройки по салонам</h2>
-      <div className="two-columns">
-        {salons.map((s) => (
-          <SalonPreferences key={s.id} salon={s} />
-        ))}
       </div>
       <section className="panel">
         <h3>Тариф и оплата</h3>

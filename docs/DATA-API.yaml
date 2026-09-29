@@ -141,7 +141,7 @@
       "method": "GET",
       "path": "/api/v1/public/salons",
       "role": "public",
-      "description": "Поиск опубликованных салонов по названию, коду, категории и активным услугам",
+      "description": "Поиск опубликованных салонов по названию, коду, категории и активным услугам с постраничной выдачей",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
     },

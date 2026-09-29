@@ -161,6 +161,10 @@ export function salonRoutes(app: FastifyInstance) {
       description: "Поиск опубликованных салонов по названию, коду, категории и активным услугам",
     },
     async ({ db, q }) => {
+      const requestedLimit = Number(q.limit);
+      const requestedOffset = Number(q.cursor);
+      const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? Math.min(100, requestedLimit) : 100;
+      const offset = Number.isSafeInteger(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
       const result = await rows<Tenant>(
         db,
         `SELECT t.* FROM tenants t WHERE t.status='published' AND
@@ -170,10 +174,13 @@ export function salonRoutes(app: FastifyInstance) {
            OR lower(t.public_code)=lower($1)
            OR EXISTS (SELECT 1 FROM services s WHERE s.tenant_id=t.id AND s.active=true
              AND (lower(s.name) LIKE '%'||lower($1)||'%' OR lower(s.description) LIKE '%'||lower($1)||'%')))
-         ORDER BY t.name LIMIT 100`,
-        [(q.query ?? "").slice(0, 120)],
+         ORDER BY t.name, t.id LIMIT $2 OFFSET $3`,
+        [(q.query ?? "").slice(0, 120), limit + 1, offset],
       );
-      return list(await Promise.all(result.map((t) => publicSalon(db, t))));
+      return {
+        items: await Promise.all(result.slice(0, limit).map((t) => publicSalon(db, t))),
+        nextCursor: result.length > limit ? String(offset + limit) : null,
+      };
     },
   );
   route(

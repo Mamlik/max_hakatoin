@@ -5,6 +5,10 @@ async function openWork(page: Page, salon: string, role: string) {
   await page.getByRole("link", { name: new RegExp(`${salon}.*${role}`) }).click();
 }
 
+function visibleWorkspace(page: Page) {
+  return page.locator('select[aria-label="Выбрать кабинет"]:visible, select[aria-label="Личный или рабочий кабинет"]:visible');
+}
+
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
@@ -31,6 +35,39 @@ test("my places search and saved theme work on both layouts", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Каталог салонов" })).toBeVisible();
 });
 
+test("profile settings focus one salon and can show all", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Клиент Записаться/ }).click();
+  await page.getByRole("link", { name: "Профиль", exact: true }).click();
+  await expect(page.locator(".salon-preferences-grid .panel")).toHaveCount(1);
+  await page.getByRole("button", { name: "Выбрать салон для настроек" }).click();
+  await page.getByLabel("Поиск салона в настройках").fill("лиНиЯ");
+  await page.locator(".salon-picker-options button").filter({ hasText: "Линия" }).click();
+  await expect(page.locator(".salon-preferences-grid h3")).toHaveText("Линия · студия волос");
+  await page.screenshot({ path: `test-results/profile-salon-${test.info().project.name}.png`, fullPage: true });
+  await page.getByRole("button", { name: "Выбрать салон для настроек" }).click();
+  await page.locator(".salon-picker-options button").filter({ hasText: "Все салоны" }).click();
+  expect(await page.locator(".salon-preferences-grid .panel").count()).toBeGreaterThan(1);
+});
+
+test("mobile header switches demo role and booking tabs remain accessible", async ({ page }) => {
+  test.skip(test.info().project.name !== "mobile");
+  await page.goto("/");
+  await page.getByRole("button", { name: /Клиент Записаться/ }).click();
+  await expect(page.getByLabel("Выбрать кабинет")).toBeVisible();
+  await page.getByRole("link", { name: "Записи", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Мои записи" })).toBeVisible();
+  await page.getByRole("tab", { name: "История" }).click();
+  await expect(page.getByRole("tab", { name: "История" })).toHaveAttribute("aria-selected", "true");
+  await page.screenshot({ path: "test-results/client-bookings-mobile.png", fullPage: true });
+  await page.getByLabel("Выбрать кабинет").selectOption("change-role");
+  await expect(page.getByRole("heading", { name: "Познакомимся с приложением" })).toBeVisible();
+  await page.getByRole("button", { name: /Владелец · Линия/ }).click();
+  const workspace = page.getByLabel("Выбрать кабинет");
+  await workspace.selectOption((await workspace.locator("option").filter({ hasText: "Линия" }).getAttribute("value"))!);
+  await expect(page.getByRole("heading", { name: "Записи салона" })).toBeVisible();
+});
+
 test("owner calendar changes month and filters masters", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Владелец · Линия/ }).click();
@@ -42,7 +79,7 @@ test("owner calendar changes month and filters masters", async ({ page }) => {
   await page.getByLabel("Поиск мастера").fill("соФ");
   await expect(page.locator(".staff-filter-menu button").filter({ hasText: "София" })).toBeVisible();
   await page.screenshot({ path: `test-results/owner-calendar-light-${test.info().project.name}.png`, fullPage: true });
-  await page.getByLabel("Личный или рабочий кабинет").selectOption("personal");
+  await visibleWorkspace(page).selectOption("personal");
   await page.getByRole("link", { name: "Профиль", exact: true }).click();
   await page.getByRole("button", { name: /Тёмная/ }).click();
   await page.getByRole("link", { name: /Линия.*владелец/ }).click();
@@ -109,7 +146,7 @@ test("client rates a master after a completed visit and edits the rating", async
     })
     .click();
   await page.getByRole("link", { name: "Записи", exact: true }).click();
-  await page.getByRole("button", { name: "История", exact: true }).click();
+  await page.getByRole("tab", { name: "История", exact: true }).click();
   await page.locator("a.booking-card").filter({ hasText: "Завершён" }).first().click();
   await expect(page.getByRole("heading", { name: "Карточка визита" })).toBeVisible();
 
@@ -456,22 +493,20 @@ test("waitlist offers the free slots it refuses to queue for", async ({
       name: "Владелец · Линия Управление студией волос и партнёрствами",
     })
     .click();
-  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const workspace = visibleWorkspace(page);
   await workspace.selectOption(
     (await workspace
       .locator("option")
       .filter({ hasText: "Линия" })
       .getAttribute("value"))!,
   );
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Живое окно", exact: true })
-    .click();
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page.getByRole("link", { name: /Настройки и цепочки «Живого окна»/ }).click();
   const enabled = page.locator("main input[type=checkbox]").first();
   if (!(await enabled.isChecked())) await enabled.check();
   await page.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByText("Настройки сохранены")).toBeVisible();
-  await page.getByRole("button", { name: "Выйти" }).click();
+  await page.getByRole("button", { name: /Выйти|Сменить роль/ }).filter({ visible: true }).click();
   await expect(page.locator(".login-page")).toBeVisible();
 
   await page
@@ -480,10 +515,7 @@ test("waitlist offers the free slots it refuses to queue for", async ({
     })
     .click();
   await expect(page.locator(".app-shell")).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Салоны", exact: true })
-    .click();
+  await page.getByRole("link", { name: "Мои места", exact: true }).click();
   await page.locator("main a").filter({ hasText: "Линия" }).first().click();
   await page
     .locator(".service-row")
@@ -526,7 +558,7 @@ test("the timezone carousel keeps the chosen zone on screen", async ({
       name: "Владелец · Линия Управление студией волос и партнёрствами",
     })
     .click();
-  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const workspace = visibleWorkspace(page);
   const option = await workspace
     .locator("option")
     .filter({ hasText: "Линия" })
@@ -570,7 +602,7 @@ test("a long salon name never pushes the workspace off screen", async ({
       name: "Владелец · Линия Управление студией волос и партнёрствами",
     })
     .click();
-  const workspace = page.getByLabel("Личный или рабочий кабинет");
+  const workspace = visibleWorkspace(page);
   const option = await workspace
     .locator("option")
     .filter({ hasText: "Линия" })
@@ -585,7 +617,7 @@ test("a long salon name never pushes the workspace off screen", async ({
     .first()
     .click();
   try {
-    await expect(page.locator(".topbar")).toContainText(long.slice(0, 12));
+    await expect(page.locator(".mobile-workspace-select option:checked")).toContainText(long.slice(0, 12));
     for (const screen of ["Журнал", "Клиенты", "Календарь"]) {
       await page.getByRole("link", { name: screen, exact: true }).click();
       expect(
@@ -601,6 +633,6 @@ test("a long salon name never pushes the workspace off screen", async ({
       .getByRole("button", { name: "Сохранить", exact: true })
       .first()
       .click();
-    await expect(page.locator(".topbar")).toContainText(original);
+    await expect(page.locator(".mobile-workspace-select option:checked")).toContainText(original);
   }
 });

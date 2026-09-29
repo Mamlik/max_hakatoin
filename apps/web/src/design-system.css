@@ -38,3 +38,39 @@ html[data-theme="dark"] .customer-row,html[data-theme="dark"] .history-row,html[
 html[data-theme="dark"] .event-row.unread,html[data-theme="dark"] .offer-card:before,html[data-theme="dark"] .event-icon,html[data-theme="dark"] .staff-avatar,html[data-theme="dark"] .circle-arrow{background:var(--accent-light);color:var(--purple)}
 html[data-theme="dark"] .field>span,html[data-theme="dark"] .check,html[data-theme="dark"] .choice-field>legend,html[data-theme="dark"] .customer-row p,html[data-theme="dark"] .service-row p,html[data-theme="dark"] .staff-card p,html[data-theme="dark"] .booking-card p{color:var(--text-muted)}
 html[data-theme="dark"] .theme-options button.selected{color:#d6cbff}html[data-theme="dark"] .salon-context-tabs button.selected{background:#6e1aff;color:#fff}
+
+.mobile-appbar{display:none}
+.topbar-date{font-weight:650;color:var(--text-muted)}
+.booking-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin:0 0 22px}
+.booking-toolbar .tabs{margin:0}
+.booking-filters{display:flex;align-items:center;flex-wrap:wrap;gap:9px}
+.booking-filters select,.booking-filters input{min-height:43px;width:auto;max-width:210px;border-radius:11px;background:var(--surface);color:var(--ink)}
+.booking-filters input{max-width:170px}
+.booking-filters .text-button{min-height:40px}
+.salon-picker{position:relative;max-width:580px;margin:0 0 20px;z-index:9}
+.salon-picker-trigger{width:100%;min-height:51px;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 15px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font-weight:800}
+.salon-picker-trigger span:last-child{font-size:23px;color:var(--purple)}
+.salon-picker-menu{position:absolute;top:calc(100% + 5px);left:0;right:0;background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:10px;box-shadow:0 18px 40px #170b302c}
+.salon-picker-menu input{width:100%;margin-bottom:8px;background:var(--surface);color:var(--ink)}
+.salon-picker-options{max-height:260px;overflow-y:auto}
+.salon-picker-options button{width:100%;min-height:41px;display:flex;align-items:center;justify-content:space-between;text-align:left;padding:8px 11px;border:0;border-radius:9px;background:transparent;color:var(--ink)}
+.salon-picker-options button:hover,.salon-picker-options button[aria-pressed="true"]{background:var(--accent-light)}
+.salon-picker-options p{padding:6px 10px}
+.salon-preferences-grid:not(:has(.panel:nth-child(2))){grid-template-columns:minmax(0,580px)}
+.salon-settings-section{scroll-margin-top:80px;margin:24px 0 30px}
+@media(max-width:900px){
+  .mobile-appbar{height:61px;display:grid;grid-template-columns:34px minmax(74px,1fr) minmax(110px,155px) 34px;align-items:center;gap:8px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:60}
+  .mobile-back,.mobile-role-switch{width:34px;height:36px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--ink)}
+  .mobile-back svg{transform:rotate(180deg);width:20px;height:20px}
+  .mobile-role-switch svg{width:19px;height:19px}
+  .mobile-wordmark{font-size:23px;font-weight:900;letter-spacing:-1.3px;color:var(--ink);white-space:nowrap}
+  .mobile-wordmark span{color:var(--purple)}
+  .mobile-workspace-select{width:100%;min-width:0;min-height:40px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--accent-light);color:var(--ink);border:1px solid var(--line);border-radius:11px;padding:7px 25px 7px 10px;font-weight:750;font-size:12px}
+  .topbar{display:none}
+  .work-shell .sidebar{position:sticky;top:61px;display:block;width:100%;height:auto;padding:0;background:var(--surface);border:0;border-bottom:1px solid var(--line);z-index:40}
+  .work-shell .sidebar>.wordmark,.work-shell .workspace-switch,.work-shell .sidebar-bottom{display:none}
+  .work-shell .sidebar nav{display:flex;overflow-x:auto;flex-wrap:nowrap;gap:3px;margin:0;padding:3px 8px 0;scrollbar-width:thin}
+  .work-shell .sidebar nav .nav-item{min-width:90px;min-height:57px;flex:0 0 auto;align-items:center;justify-content:center;padding:6px;font-size:11px;font-weight:750}
+  .personal-shell .sidebar{top:auto}
+}
+@media(max-width:640px){.booking-toolbar{align-items:stretch}.booking-toolbar .tabs{width:100%}.booking-toolbar .tabs button{flex:1}.booking-filters{width:100%}.booking-filters select,.booking-filters input{flex:1;min-width:0;max-width:none}.salon-picker{max-width:none}}

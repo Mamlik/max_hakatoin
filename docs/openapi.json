@@ -868,9 +868,13 @@
     },
     "/api/v1/public/salons": {
       "get": {
-        "summary": "Поиск опубликованных салонов по названию, коду, категории и активным услугам",
+        "summary": "Поиск опубликованных салонов по названию, коду, категории и активным услугам с постраничной выдачей",
         "security": [],
-        "parameters": [],
+        "parameters": [
+          { "name": "query", "in": "query", "schema": { "type": "string" }, "description": "Название, категория, адрес, код или услуга" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" }, "description": "nextCursor из предыдущей страницы" }
+        ],
         "responses": {
           "200": {
             "description": "Успешный результат в data/meta"

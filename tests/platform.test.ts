@@ -184,6 +184,16 @@ afterAll(async () => {
   redis.disconnect();
 });
 describe("booking and access invariants on PostgreSQL", () => {
+  it("paginates the public salon catalogue used by profile settings", async () => {
+    const first = await req<{items:Array<{id:string}>;nextCursor:string|null}>("GET", "/api/v1/public/salons?limit=1");
+    expect(first.status).toBe(200);
+    expect(first.data.items).toHaveLength(1);
+    expect(first.data.nextCursor).toBe("1");
+    const second = await req<{items:Array<{id:string}>;nextCursor:string|null}>("GET", `/api/v1/public/salons?limit=1&cursor=${first.data.nextCursor}`);
+    expect(second.status).toBe(200);
+    expect(second.data.items).toHaveLength(1);
+    expect(second.data.items[0]?.id).not.toBe(first.data.items[0]?.id);
+  });
   it("returns published salon media in the familiar salons carousel", async () => {
     const client = await login();
     const salonId = f("salon-a");
