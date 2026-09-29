@@ -231,6 +231,13 @@ function App() {
       : []),
     ...(member?.role !== "master" ? [["audit", "bell", "Журнал"]] : []),
   ].map(([p, i, l]) => [`/work/${tenantId}/${p}`, i, l]);
+  if (member?.role === "master") {
+    work.push(
+      ["/me/salons", "salons", "Мои места"],
+      ["/me/bookings", "calendar", "Мои записи"],
+      ["/me/profile", "user", "Профиль"],
+    );
+  }
   return (
     <div className={`app-shell ${tenantId ? "work-shell" : "personal-shell"}`}>
       <header className="mobile-appbar">

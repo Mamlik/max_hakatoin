@@ -67,10 +67,17 @@ html[data-theme="dark"] .theme-options button.selected{color:#d6cbff}html[data-t
   .mobile-wordmark span{color:var(--purple)}
   .mobile-workspace-select{width:100%;min-width:0;min-height:40px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--accent-light);color:var(--ink);border:1px solid var(--line);border-radius:11px;padding:7px 25px 7px 10px;font-weight:750;font-size:12px}
   .topbar{display:none}
-  .work-shell .sidebar{position:sticky;top:61px;display:block;width:100%;height:auto;padding:0;background:var(--surface);border:0;border-bottom:1px solid var(--line);z-index:40}
+  .work-shell .sidebar{position:fixed;inset:auto 0 0;display:block;width:100%;height:auto;padding:0;background:var(--surface);border:0;border-top:1px solid var(--line);z-index:50}
   .work-shell .sidebar>.wordmark,.work-shell .workspace-switch,.work-shell .sidebar-bottom{display:none}
-  .work-shell .sidebar nav{display:flex;overflow-x:auto;flex-wrap:nowrap;gap:3px;margin:0;padding:3px 8px 0;scrollbar-width:thin}
+  .work-shell .sidebar nav{display:flex;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;gap:3px;margin:0;padding:3px 8px max(5px,env(safe-area-inset-bottom));scrollbar-width:thin;overscroll-behavior-inline:contain}
   .work-shell .sidebar nav .nav-item{min-width:90px;min-height:57px;flex:0 0 auto;align-items:center;justify-content:center;padding:6px;font-size:11px;font-weight:750}
+  .work-shell .main-column main{padding-bottom:110px}
+  .work-shell footer{padding-bottom:95px}
   .personal-shell .sidebar{top:auto}
 }
 @media(max-width:640px){.booking-toolbar{align-items:stretch}.booking-toolbar .tabs{width:100%}.booking-toolbar .tabs button{flex:1}.booking-filters{width:100%}.booking-filters select,.booking-filters input{flex:1;min-width:0;max-width:none}.salon-picker{max-width:none}}
+.salon-avatar-panel{display:flex;align-items:center;gap:20px}
+.salon-avatar-preview{width:92px;height:92px;flex:0 0 92px;display:grid;place-items:center;overflow:hidden;border-radius:22px;background:var(--accent-light);color:var(--purple);font-size:40px;font-weight:800}
+.salon-avatar-preview img{width:100%;height:100%;object-fit:cover}
+.salon-avatar-details{min-width:0}.salon-avatar-details h2{margin-bottom:3px}.salon-avatar-details p{margin:0 0 12px}
+@media(max-width:640px){.salon-avatar-panel{align-items:flex-start;gap:14px}.salon-avatar-preview{width:68px;height:68px;flex-basis:68px;border-radius:16px;font-size:30px}}

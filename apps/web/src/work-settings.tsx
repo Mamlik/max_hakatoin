@@ -14,7 +14,7 @@ import {
   FilePick,
   TimezonePicker,
 } from "./ui";
-import { StorefrontView } from "./personal";
+import { Asset, StorefrontView } from "./personal";
 import { LinkBox } from "./work";
 import type {
   Salon,
@@ -45,13 +45,14 @@ export function SettingsPage() {
     [storefrontVersion, setStorefrontVersion] = useState<number>(),
     [preview, setPreview] = useState(false);
   const a = useAction();
+  const avatarAction = useAction();
   useEffect(() => setStyle(draft.data?.draftStyle), [draft.data?.version]);
   useEffect(
     () => setStorefrontVersion(profile.data?.version),
     [profile.data?.version],
   );
   const member = auth.me!.memberships.find((m) => m.tenantId === t)!;
-  const upload = async (purpose: "logo" | "cover", file?: File) => {
+  const upload = async (purpose: "cover", file?: File) => {
     if (!file) return;
     const form = new FormData();
     form.append("purpose", purpose);
@@ -62,11 +63,27 @@ export function SettingsPage() {
         s
           ? {
               ...s,
-              [purpose === "logo" ? "logoMediaId" : "coverMediaId"]: media.id,
+              coverMediaId: media.id,
             }
           : s,
       );
     }, "Изображение загружено. Сохраните черновик оформления.");
+  };
+  const replaceAvatar = async (file?: File) => {
+    if (!file) return;
+    const form = new FormData();
+    form.append("purpose", "logo");
+    form.append("file", file);
+    await avatarAction.run(async () => {
+      const media = await api<Media>(`/work/${t}/media`, "POST", form);
+      const current = await api<Salon>(`/work/${t}/profile`);
+      const updated = await api<Salon>(`/work/${t}/storefront/avatar`, "POST", {
+        expectedVersion: current.version,
+        mediaId: media.id,
+      });
+      setStyle((previous) => previous ? { ...previous, logoMediaId: media.id } : previous);
+      setStorefrontVersion(updated.version);
+    }, "Аватар салона обновлён и виден клиентам");
   };
   return (
     <>
@@ -136,6 +153,27 @@ export function SettingsPage() {
                     >
                       Открыть витрину
                     </Link>
+                  </div>
+                </section>
+                <section className="panel salon-avatar-panel">
+                  <div className="salon-avatar-preview">
+                    <Asset
+                      tenantId={salon.id}
+                      media={draft.data?.media?.find((media) => media.id === salon.publishedStyle?.logoMediaId)}
+                      alt="Аватар салона"
+                    />
+                    {!salon.publishedStyle?.logoMediaId && salon.name.charAt(0)}
+                  </div>
+                  <div className="salon-avatar-details">
+                    <h2>Аватар салона</h2>
+                    <p>Логотип на витрине и в карточке салона. JPEG, PNG или WebP до 5 МБ.</p>
+                    <FilePick
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={avatarAction.busy}
+                      onPick={(file) => void replaceAvatar(file)}
+                      label={salon.publishedStyle?.logoMediaId ? "Заменить аватар" : "Добавить аватар"}
+                    />
+                    {avatarAction.feedback}
                   </div>
                 </section>
                 <div className="two-columns">
@@ -326,20 +364,6 @@ export function SettingsPage() {
                           </Field>
                         </div>
                         <div>
-                          <Field
-                            label="Логотип"
-                            hint="JPEG, PNG или WebP до 5 МБ. Сервер удалит метаданные и сохранит WebP."
-                          >
-                            <FilePick
-                              accept="image/jpeg,image/png,image/webp"
-                              disabled={a.busy}
-                              onPick={(f) => void upload("logo", f)}
-                              label="Выбрать логотип"
-                            />
-                          </Field>
-                          {style.logoMediaId && (
-                            <p className="small success-text">Логотип выбран</p>
-                          )}
                           <Field
                             label="Обложка"
                             hint="Рекомендуемое соотношение 16:9; обрезка по центру."

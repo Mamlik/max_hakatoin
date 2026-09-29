@@ -93,6 +93,16 @@ test("master calendar excludes staff controls and CRM", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Мой календарь" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Все мастера" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Клиенты", exact: true })).toHaveCount(0);
+  if (test.info().project.name === "mobile") {
+    const navigation = page.locator(".work-shell .sidebar");
+    await expect(navigation).toHaveCSS("position", "fixed");
+    await expect(navigation.getByRole("link", { name: "Календарь" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Мои места" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Мои записи" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Профиль" })).toBeVisible();
+    const bottom = await navigation.boundingBox();
+    expect(bottom!.y + bottom!.height).toBeGreaterThan(page.viewportSize()!.height - 3);
+  }
 });
 
 test("client sees loyalty progress and can calculate an appointment", async ({
@@ -347,7 +357,8 @@ test("salon media and friendly timezones reach the published storefront", async 
     mimeType: "image/png",
     buffer: tinyPng,
   });
-  await expect(page.getByText("Логотип выбран", { exact: true })).toBeVisible();
+  await expect(page.getByText("Аватар салона обновлён и виден клиентам", { exact: true })).toBeVisible();
+  await expect(page.getByAltText("Аватар салона")).toBeVisible();
   await files.nth(1).setInputFiles({
     name: "cover.png",
     mimeType: "image/png",
