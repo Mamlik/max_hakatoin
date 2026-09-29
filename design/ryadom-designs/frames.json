@@ -1,0 +1,426 @@
+[
+  {
+    "id": "A-store",
+    "concept": "A",
+    "key": "store",
+    "title": "01 Витрина",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-slots",
+    "concept": "A",
+    "key": "slots",
+    "title": "02 Мастер и время",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-empty",
+    "concept": "A",
+    "key": "empty",
+    "title": "02b Нет времени",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-booking",
+    "concept": "A",
+    "key": "booking",
+    "title": "03 Будущая запись",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-request",
+    "concept": "A",
+    "key": "request",
+    "title": "04 Запрос окна",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-offer",
+    "concept": "A",
+    "key": "offer",
+    "title": "05 Предложение",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-calendar",
+    "concept": "A",
+    "key": "calendar",
+    "title": "06 Календарь",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-window",
+    "concept": "A",
+    "key": "window",
+    "title": "07 Живое окно",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "B-store",
+    "concept": "B",
+    "key": "store",
+    "title": "01 Витрина",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "B-slots",
+    "concept": "B",
+    "key": "slots",
+    "title": "02 Мастер и время",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "B-empty",
+    "concept": "B",
+    "key": "empty",
+    "title": "02b Нет времени",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "B-booking",
+    "concept": "B",
+    "key": "booking",
+    "title": "03 Будущая запись",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "B-request",
+    "concept": "B",
+    "key": "request",
+    "title": "04 Запрос окна",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "B-offer",
+    "concept": "B",
+    "key": "offer",
+    "title": "05 Предложение",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "B-calendar",
+    "concept": "B",
+    "key": "calendar",
+    "title": "06 Календарь",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "B-window",
+    "concept": "B",
+    "key": "window",
+    "title": "07 Живое окно",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "C-store",
+    "concept": "C",
+    "key": "store",
+    "title": "01 Витрина",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "C-slots",
+    "concept": "C",
+    "key": "slots",
+    "title": "02 Мастер и время",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "C-empty",
+    "concept": "C",
+    "key": "empty",
+    "title": "02b Нет времени",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "C-booking",
+    "concept": "C",
+    "key": "booking",
+    "title": "03 Будущая запись",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "C-request",
+    "concept": "C",
+    "key": "request",
+    "title": "04 Запрос окна",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "C-offer",
+    "concept": "C",
+    "key": "offer",
+    "title": "05 Предложение",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "C-calendar",
+    "concept": "C",
+    "key": "calendar",
+    "title": "06 Календарь",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "C-window",
+    "concept": "C",
+    "key": "window",
+    "title": "07 Живое окно",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-confirm",
+    "concept": "A",
+    "key": "confirm",
+    "title": "08 Подтверждение",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-bookings",
+    "concept": "A",
+    "key": "bookings",
+    "title": "09 Мои записи",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-history",
+    "concept": "A",
+    "key": "history",
+    "title": "10 История",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-requestSaved",
+    "concept": "A",
+    "key": "requestSaved",
+    "title": "11 Запрос создан",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-offerMove",
+    "concept": "A",
+    "key": "offerMove",
+    "title": "12 Предложение переноса",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-moved",
+    "concept": "A",
+    "key": "moved",
+    "title": "13 Запись перенесена",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-decline",
+    "concept": "A",
+    "key": "decline",
+    "title": "14 Отказ",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-declined",
+    "concept": "A",
+    "key": "declined",
+    "title": "15 Ждать дальше",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-closed",
+    "concept": "A",
+    "key": "closed",
+    "title": "16 Запрос закрыт",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-lost",
+    "concept": "A",
+    "key": "lost",
+    "title": "17 Время занято",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-expired",
+    "concept": "A",
+    "key": "expired",
+    "title": "18 Срок истёк",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-loyalty",
+    "concept": "A",
+    "key": "loyalty",
+    "title": "19 Лояльность",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-crm",
+    "concept": "A",
+    "key": "crm",
+    "title": "20 Клиент",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-catalog",
+    "concept": "A",
+    "key": "catalog",
+    "title": "21 Услуги",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-stop",
+    "concept": "A",
+    "key": "stop",
+    "title": "22 Остановка окна",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-stopped",
+    "concept": "A",
+    "key": "stopped",
+    "title": "23 Окно остановлено",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-visit",
+    "concept": "A",
+    "key": "visit",
+    "title": "24 Запись сотрудника",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-paused",
+    "concept": "A",
+    "key": "paused",
+    "title": "25 Канал недоступен",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-error",
+    "concept": "A",
+    "key": "error",
+    "title": "26 Ошибка сети",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-noBookings",
+    "concept": "A",
+    "key": "noBookings",
+    "title": "27 Нет записей",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-noCRM",
+    "concept": "A",
+    "key": "noCRM",
+    "title": "28 Нет клиентов",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-entry",
+    "concept": "A",
+    "key": "entry",
+    "title": "00 Выбор кабинета",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-requestMove",
+    "concept": "A",
+    "key": "requestMove",
+    "title": "04b Запрос переноса",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-reward",
+    "concept": "A",
+    "key": "reward",
+    "title": "19b Бесплатный визит",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-saved",
+    "concept": "A",
+    "key": "saved",
+    "title": "21b Услуга сохранена",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-service",
+    "concept": "A",
+    "key": "service",
+    "title": "01b Услуга",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-checking",
+    "concept": "A",
+    "key": "checking",
+    "title": "12b Проверка времени",
+    "width": 390,
+    "height": 844
+  },
+  {
+    "id": "A-calendar-wide",
+    "concept": "A",
+    "key": "calendar",
+    "title": "06 Календарь",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "id": "A-crm-wide",
+    "concept": "A",
+    "key": "crm",
+    "title": "20 Клиент",
+    "width": 1440,
+    "height": 900
+  }
+]
