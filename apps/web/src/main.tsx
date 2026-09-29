@@ -41,6 +41,13 @@ import { LoyaltyPage, LoyaltySettingsPage } from "./loyalty";
 import { PromotionsWorkPage } from './promotions-ui';
 import { LiveWindowOfferPage, LiveWindowWorkPage, WaitlistForm, WaitlistPage } from "./live-window-ui";
 import "./style.css";
+import "./design-system.css";
+
+try {
+  document.documentElement.dataset.theme = localStorage.getItem("ryadom-theme") === "dark" ? "dark" : "light";
+} catch {
+  document.documentElement.dataset.theme = "light";
+}
 
 function App() {
   const auth = useAuth();
@@ -189,13 +196,13 @@ function App() {
       </div>
     );
   const personal = [
-    ["/me/bookings", "calendar", "Мои записи"],
-    ["/me/salons", "salons", "Салоны"],
-    ["/me/loyalty", "gift", "Лояльность"],
+    ["/me/salons", "salons", "Мои места"],
+    ["/me/bookings", "calendar", "Записи"],
+    ["/me/loyalty", "gift", "Бонусы"],
+    ["/me/profile", "user", "Профиль"],
     ["/me/offers", "gift", "Предложения"],
     ["/me/events", "bell", "События"],
     ["/me/waitlist", "calendar", "Живое окно"],
-    ["/me/profile", "user", "Профиль"],
   ];
   const work = [
     ["calendar", "calendar", "Календарь"],
@@ -205,7 +212,6 @@ function App() {
           ["catalog", "salons", "Услуги и мастера"],
           ["schedule", "calendar", "График"],
           ["analytics", "chart", "Статистика"],
-          ["live-window", "calendar", "Живое окно"],
         ]
       : []),
     ...(member?.role === "owner"
@@ -220,9 +226,9 @@ function App() {
     ...(member?.role !== "master" ? [["audit", "bell", "Журнал"]] : []),
   ].map(([p, i, l]) => [`/work/${tenantId}/${p}`, i, l]);
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${tenantId ? "work-shell" : "personal-shell"}`}>
       <aside className="sidebar">
-        <Link to="/me/bookings" className="wordmark">
+        <Link to="/me/salons" className="wordmark">
           <span className="brand-mark">р.</span>рядом
         </Link>
         <div className="workspace-switch">
@@ -233,7 +239,7 @@ function App() {
             onChange={(e) =>
               navigate(
                 e.target.value === "personal"
-                  ? "/me/bookings"
+                  ? "/me/salons"
                   : `/work/${e.target.value}/calendar`,
               )
             }
@@ -310,7 +316,7 @@ function App() {
         </header>
         <main key={`${auth.me.user.id}:${tenantId ?? "personal"}`}>
           <Routes>
-            <Route path="/" element={<Navigate to="/me/bookings" replace />} />
+            <Route path="/" element={<Navigate to="/me/salons" replace />} />
             <Route path="/me/bookings" element={<BookingsPage />} />
             <Route path="/me/salons" element={<DiscoverPage />} />
             <Route path="/s/:code" element={<SalonPage />} />
@@ -359,7 +365,7 @@ function App() {
               element={
                 <div className="empty">
                   <h2>Страница не найдена</h2>
-                  <Link to="/me/bookings">В личный кабинет</Link>
+                  <Link to="/me/salons">В личный кабинет</Link>
                 </div>
               }
             />

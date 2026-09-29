@@ -74,6 +74,7 @@ export function SettingsPage() {
         title="Настройки салона"
         description="Профиль, оформление и публикация. Черновик не меняет витрину до нажатия «Опубликовать»."
       />
+      <div className="profile-links"><Link to={`/work/${t}/live-window`}>Настройки и цепочки «Живого окна» →</Link></div>
       <Load {...profile}>
         {profile.data &&
           (() => {

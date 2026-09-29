@@ -1,9 +1,62 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+async function openWork(page: Page, salon: string, role: string) {
+  await page.getByRole("link", { name: "Профиль", exact: true }).click();
+  await page.getByRole("link", { name: new RegExp(`${salon}.*${role}`) }).click();
+}
 
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 );
+
+test("my places search and saved theme work on both layouts", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Клиент Записаться/ }).click();
+  await expect(page.getByRole("heading", { name: "Мои места", exact: true })).toBeVisible();
+  await page.screenshot({ path: `test-results/my-places-light-${test.info().project.name}.png`, fullPage: true });
+  await page.getByLabel("Поиск салона").fill("маникюр");
+  await expect(page.getByRole("heading", { name: "Результаты поиска" })).toBeVisible();
+  await expect(page.locator("a.salon-card").filter({ hasText: "Точка" })).toBeVisible();
+  await page.getByRole("link", { name: "Профиль", exact: true }).click();
+  await page.getByRole("button", { name: /Тёмная/ }).click();
+  await page.getByRole("link", { name: "Мои места", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: /Клиент Записаться/ }).click();
+  await expect(page.getByRole("heading", { name: "Знакомое место" })).toBeVisible();
+  await page.screenshot({ path: `test-results/my-places-dark-${test.info().project.name}.png`, fullPage: true });
+  await page.getByRole("button", { name: "Открыть каталог салонов" }).click();
+  await expect(page.getByRole("heading", { name: "Каталог салонов" })).toBeVisible();
+});
+
+test("owner calendar changes month and filters masters", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Владелец · Линия/ }).click();
+  await openWork(page, "Линия", "владелец");
+  await expect(page.getByRole("heading", { name: "Записи салона" })).toBeVisible();
+  await page.getByRole("button", { name: "Предыдущий месяц" }).click();
+  expect(await page.locator(".month-days button").count()).toBeGreaterThanOrEqual(28);
+  await page.getByRole("button", { name: "Все мастера" }).click();
+  await page.getByLabel("Поиск мастера").fill("соФ");
+  await expect(page.locator(".staff-filter-menu button").filter({ hasText: "София" })).toBeVisible();
+  await page.screenshot({ path: `test-results/owner-calendar-light-${test.info().project.name}.png`, fullPage: true });
+  await page.getByLabel("Личный или рабочий кабинет").selectOption("personal");
+  await page.getByRole("link", { name: "Профиль", exact: true }).click();
+  await page.getByRole("button", { name: /Тёмная/ }).click();
+  await page.getByRole("link", { name: /Линия.*владелец/ }).click();
+  await page.screenshot({ path: `test-results/owner-calendar-dark-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("master calendar excludes staff controls and CRM", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Мастер Только свои назначения/ }).click();
+  await openWork(page, "Линия", "мастер");
+  await expect(page.getByRole("heading", { name: "Мой календарь" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Все мастера" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Клиенты", exact: true })).toHaveCount(0);
+});
 
 test("client sees loyalty progress and can calculate an appointment", async ({
   page,
@@ -14,9 +67,9 @@ test("client sees loyalty progress and can calculate an appointment", async ({
       name: "Клиент Записаться, перенести визит, получить купон",
     })
     .click();
-  await page.getByRole("link", { name: "Лояльность", exact: true }).click();
+  await page.getByRole("link", { name: "Бонусы", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Бесплатные посещения", exact: true }),
+    page.getByRole("heading", { name: "Программы лояльности", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("5 платных посещений").first()).toBeVisible();
   await expect(page.getByRole("progressbar").first()).toBeVisible();
@@ -28,7 +81,7 @@ test("client sees loyalty progress and can calculate an appointment", async ({
     .getByRole("link", { name: "Выбрать время", exact: true })
     .first()
     .click();
-  await expect(page.getByLabel("Бесплатное посещение")).toBeVisible();
+  await expect(page.getByLabel("Награда программы (необязательно)")).toBeVisible();
   const slot = page.locator(".slots-grid button").first();
   await expect(slot).toBeVisible();
   await slot.click();
@@ -55,6 +108,7 @@ test("client rates a master after a completed visit and edits the rating", async
       name: "Клиент Записаться, перенести визит, получить купон",
     })
     .click();
+  await page.getByRole("link", { name: "Записи", exact: true }).click();
   await page.getByRole("button", { name: "История", exact: true }).click();
   await page.locator("a.booking-card").filter({ hasText: "Завершён" }).first().click();
   await expect(page.getByRole("heading", { name: "Карточка визита" })).toBeVisible();
@@ -89,22 +143,15 @@ test("owner can view loyalty settings and customer progress", async ({
       name: "Владелец · Линия Управление студией волос и партнёрствами",
     })
     .click();
-  const workspace = page.getByLabel("Личный или рабочий кабинет");
-  const option = await workspace
-    .locator("option")
-    .filter({ hasText: "Линия" })
-    .getAttribute("value");
-  await workspace.selectOption(option!);
+  await openWork(page, "Линия", "владелец");
   await page.getByRole("link", { name: "Лояльность", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Программа лояльности", exact: true }),
+    page.getByRole("heading", { name: "Лояльность салона", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Накопление включено", { exact: true }),
+    page.getByRole("heading", { name: "Совместная лояльность", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByLabel("Платных посещений до подарка").first(),
-  ).toHaveValue("5");
+  await expect(page.getByRole("heading", { name: "Новая программа" })).toBeVisible();
   await page.screenshot({
     path: `test-results/loyalty-settings-${test.info().project.name}.png`,
     fullPage: true,
@@ -114,7 +161,7 @@ test("owner can view loyalty settings and customer progress", async ({
   await expect(
     page.getByRole("heading", { name: "Лояльность клиента", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText(/бесплатных визитов доступно/)).toBeVisible();
+  await expect(page.getByText(/наград доступно:/)).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -145,7 +192,7 @@ test("deep links open the salon storefront and the loyalty screen", async ({
   await page.goto(launch("loyalty"));
   await expect(page).toHaveURL(/\/me\/loyalty$/);
   await expect(
-    page.getByRole("heading", { name: "Бесплатные посещения", exact: true }),
+    page.getByRole("heading", { name: "Программы лояльности", exact: true }),
   ).toBeVisible();
 });
 
@@ -156,11 +203,12 @@ test("client and owner can open Live Window screens", async ({ page }) => {
       name: "Клиент Записаться, перенести визит, получить купон",
     })
     .click();
-  await page.getByRole("link", { name: "Живое окно", exact: true }).click();
+  await page.getByRole("link", { name: "Профиль", exact: true }).click();
+  await page.getByRole("link", { name: "Запросы «Живого окна»" }).click();
   await expect(
     page.getByRole("heading", { name: "Ожидаем удобное время" }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Салоны", exact: true }).click();
+  await page.getByRole("link", { name: "Мои места", exact: true }).click();
   await page.locator("a.salon-card").first().click();
   await page.getByRole("link", { name: /Записаться/ }).first().click();
   await page.getByLabel("Услуга").selectOption({ index: 1 });
@@ -193,13 +241,9 @@ test("client and owner can open Live Window screens", async ({ page }) => {
 
   await page.goto("/");
   await page.getByRole("button", { name: /Владелец · Линия/ }).click();
-  const workspace = page.getByLabel("Личный или рабочий кабинет");
-  const option = await workspace
-    .locator("option")
-    .filter({ hasText: "Линия" })
-    .getAttribute("value");
-  await workspace.selectOption(option!);
-  await page.getByRole("link", { name: "Живое окно", exact: true }).click();
+  await openWork(page, "Линия", "владелец");
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page.getByRole("link", { name: /Настройки и цепочки «Живого окна»/ }).click();
   await expect(page.getByRole("heading", { name: "Живое окно" })).toBeVisible();
   await expect(
     page.getByText(/предложения отправляются автоматически/i),
@@ -215,12 +259,7 @@ test("a service nobody provides is flagged to the owner", async ({ page }) => {
       name: "Владелец · Линия Управление студией волос и партнёрствами",
     })
     .click();
-  const workspace = page.getByLabel("Личный или рабочий кабинет");
-  const option = await workspace
-    .locator("option")
-    .filter({ hasText: "Линия" })
-    .getAttribute("value");
-  await workspace.selectOption(option!);
+  await openWork(page, "Линия", "владелец");
   await page
     .getByRole("navigation")
     .getByRole("link", { name: "Услуги и мастера", exact: true })
@@ -259,12 +298,7 @@ test("salon media and friendly timezones reach the published storefront", async 
       name: "Владелец · Линия Управление студией волос и партнёрствами",
     })
     .click();
-  const workspace = page.getByLabel("Личный или рабочий кабинет");
-  const option = await workspace
-    .locator("option")
-    .filter({ hasText: "Линия" })
-    .getAttribute("value");
-  await workspace.selectOption(option!);
+  await openWork(page, "Линия", "владелец");
   await page.getByRole("link", { name: "Настройки", exact: true }).click();
 
   const timezone = page.getByRole("radiogroup", { name: "Часовой пояс" });
@@ -299,6 +333,7 @@ test("salon media and friendly timezones reach the published storefront", async 
     mimeType: "image/png",
     buffer: tinyPng,
   });
+  await expect(page.getByText("Изображение загружено. Сохраните карточку.")).toBeVisible();
   await dialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(service.locator(".service-cover")).toBeVisible();
 
@@ -310,6 +345,7 @@ test("salon media and friendly timezones reach the published storefront", async 
     mimeType: "image/png",
     buffer: tinyPng,
   });
+  await expect(page.getByText("Изображение загружено. Сохраните карточку.")).toBeVisible();
   await dialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(master.locator(".staff-avatar img")).toBeVisible();
 
@@ -384,7 +420,7 @@ test("MAX back closes the Android mini-app at the root screen", async ({
   }, data.initData);
 
   await page.goto("/");
-  await expect(page).toHaveURL(/\/me\/bookings$/);
+  await expect(page).toHaveURL(/\/me\/salons$/);
   await expect.poll(() => page.evaluate(() => (window as any).__bridge.shown)).toBe(true);
   await page.evaluate(() => (window as any).__pressMaxBack());
   await expect.poll(() => page.evaluate(() => (window as any).__bridge.closed)).toBe(1);
@@ -397,12 +433,7 @@ test("master can replace their own storefront photo", async ({ page }) => {
       name: "Мастер Только свои назначения и исходы визитов",
     })
     .click();
-  const workspace = page.getByLabel("Личный или рабочий кабинет");
-  const option = await workspace
-    .locator("option")
-    .filter({ hasText: "Линия" })
-    .getAttribute("value");
-  await workspace.selectOption(option!);
+  await openWork(page, "Линия", "мастер");
   const card = page.locator(".master-profile-card");
   await expect(card.getByRole("heading", { name: "София" })).toBeVisible();
   await card.locator('input[type="file"]').setInputFiles({

@@ -59,6 +59,7 @@ export function bookingDTO(b: Booking, member?: Membership) {
       serviceNameSnapshot: b.service_name_snapshot,
       startAt: b.start_at,
       endAt: b.end_at,
+      timezoneSnapshot: b.timezone_snapshot,
       status: b.status,
       version: b.version,
       allowedActions,
@@ -201,10 +202,10 @@ export function bookingRoutes(app: FastifyInstance) {
           member.role === "master" ? member.id : null,
         ],
       );
-      return list(
-        result.map((b) => bookingDTO(b, member)),
-        1000,
-      );
+      return {
+        ...list(result.map((b) => bookingDTO(b, member)), 1000),
+        timezone: (await tenantById(db, p.t!)).timezone,
+      };
     },
   );
   for (const work of [false, true]) {

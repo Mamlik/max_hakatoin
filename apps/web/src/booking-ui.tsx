@@ -772,6 +772,9 @@ export function BookingPage({ work = false }: { work?: boolean }) {
                         Записаться снова
                       </Link>
                     )}
+                    {work && auth.me?.memberships.find((m) => m.tenantId === t)?.role !== "master" && b.status === "cancelled" && (
+                      <Link className="button secondary" to={`/work/${t}/live-window?sourceBookingId=${b.id}`}>Освободившееся окно</Link>
+                    )}
                   </div>
                   {action.feedback}
                   {work &&

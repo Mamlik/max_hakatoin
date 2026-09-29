@@ -1635,7 +1635,7 @@ describe("MAX durable channel lifecycle", () => {
           { payload: "home" },
         )
       ).data.path,
-    ).toBe("/me/bookings");
+    ).toBe("/me/salons");
   });
   it("requires webhook secret and persists before acknowledging", async () => {
     const denied = await app.inject({

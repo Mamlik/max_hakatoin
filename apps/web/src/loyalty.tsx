@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { DateTime } from 'luxon';
 import { api, useApi, refreshData } from "./api";
 import { Badge, Empty, Field, Load, PageTitle, plural, useAction, money, dateTime } from "./ui";
-import type { Items, Service } from "./types";
+import type { Campaign, Items, Service } from "./types";
 
 export interface LoyaltyReward {
   id: string;
@@ -152,14 +152,22 @@ export function LoyaltySettingsPage() {
   const { t } = useParams();
   const [editing,setEditing]=useState<Program|null>(null);
   const programs = useApi<Items<Program>>(`/work/${t}/loyalty-programs`, true);
+  const campaigns = useApi<Items<Campaign>>(`/work/${t}/campaigns`, true);
   const services = useApi<Items<Service>>(`/work/${t}/services`);
   const salon=useApi<{timezone:string}>(`/work/${t}/profile`);
   return (
     <>
       <PageTitle
-        title="Программы лояльности"
-        description="Несколько программ могут действовать для одной услуги одновременно. У каждой свой прогресс и награда."
+        title="Лояльность салона"
+        description="Собственные программы и совместные предложения с другими салонами."
       />
+      <section className="panel loyalty-overview"><div className="section-head"><h2>Свои программы</h2><span className="muted">{programs.data ? plural(programs.data.items.length, "программа", "программы", "программ") : "…"}</span></div>
+        <Load {...programs}>{programs.data?.items.length ? programs.data.items.map((program) => <div className="history-row" key={program.id}><div><strong>{program.name}</strong><p>{program.serviceName} · {benefitLabel(program.rewardType, program.fixedDiscountMinor, program.discountPercent, program.freeVisitsCount)}</p></div><Badge status={program.status} /></div>) : <Empty title="Программ пока нет" text="Создайте первую программу ниже." />}</Load>
+      </section>
+      <section className="panel loyalty-overview"><div className="section-head"><h2>Совместная лояльность</h2><Link to={`/work/${t}/partners`}>Условия и действия →</Link></div>
+        <Load {...campaigns}>{campaigns.data?.items.length ? campaigns.data.items.map((campaign) => <div className="history-row" key={campaign.id}><div><strong>{campaign.sourceName} → {campaign.targetName}</strong><p>{campaign.pendingVersionId ? "Ожидает решения по условиям" : campaign.pauses.length ? "На паузе" : "Действующие условия и история версий"}</p></div><Badge status={campaign.status} /></div>) : <Empty title="Совместных программ пока нет" text="Здесь появятся партнёрства и предложения, ожидающие решения." />}</Load>
+      </section>
+      <div className="profile-links"><Link to={`/work/${t}/promotions`}>Временные акции →</Link></div>
       <p className="notice">
         Например, 5 платных стрижек + 1 бесплатная. Засчитываются только
         завершённые визиты с ненулевой стоимостью. Порог фиксируется после

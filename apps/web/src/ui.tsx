@@ -426,6 +426,7 @@ export function SimpleForm({
   fields,
   onSubmit,
   submit = "Сохранить",
+  submitDisabled = false,
   initial = {},
   children,
 }: {
@@ -438,6 +439,7 @@ export function SimpleForm({
   }[];
   onSubmit: (values: Record<string, string>) => Promise<unknown>;
   submit?: string;
+  submitDisabled?: boolean;
   initial?: Record<string, string | number>;
   children?: ReactNode;
 }) {
@@ -474,7 +476,7 @@ export function SimpleForm({
       ))}
       {children}
       {action.feedback}
-      <button className="button primary" disabled={action.busy}>
+      <button className="button primary" disabled={action.busy || submitDisabled}>
         {action.busy ? "Сохраняем…" : submit}
       </button>
     </form>

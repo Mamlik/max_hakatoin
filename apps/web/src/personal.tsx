@@ -283,70 +283,51 @@ export function SalonCard({ salon: s }: { salon: Salon }) {
 }
 export function DiscoverPage() {
   const [query, setQuery] = useState("");
+  const [showCatalog, setShowCatalog] = useState(false);
+  const search = query.trim();
   const publicData = useApi<Items<Salon>>(
-    `/public/salons?query=${encodeURIComponent(query)}`,
+    search || showCatalog ? `/public/salons?query=${encodeURIComponent(search)}` : null,
   );
   const mine = useApi<Items<Salon>>("/me/salons");
-  // Salons already listed under «Вы уже знакомы» must not appear again in the discovery row.
-  const known = new Set(mine.data?.items.map((s) => s.id) ?? []);
-  const discover = (publicData.data?.items ?? []).filter(
-    (s) => !!query || !known.has(s.id),
-  );
+  const familiar = [...(mine.data?.items ?? [])].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite));
+  const discover = publicData.data?.items ?? [];
   return (
     <>
       <PageTitle
-        eyebrow="МЕСТА, К КОТОРЫМ ХОЧЕТСЯ ВОЗВРАЩАТЬСЯ"
-        title="Ваши салоны"
-        description="Сохраняйте любимые места и находите новые."
+        eyebrow="РЯДОМ · ВАШЕ ВРЕМЯ ДЛЯ СЕБЯ"
+        title="Мои места"
+        description="Знакомые салоны и всё, что связано с ними. Найдите другое место по названию или услуге."
       />
-      <div className="search-box">
+      <div className="search-box place-search">
         <Icon name="search" />
         <input
           aria-label="Поиск салона"
-          placeholder="Название салона или код"
+          type="search"
+          placeholder="Салон, услуга или ключевое слово"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      {!query && !!mine.data?.items.length && (
+      {search || showCatalog ? (
         <>
           <div className="section-head">
-            <h2>Вы уже знакомы</h2>
-            <span className="muted">Избранное и ваши визиты</span>
+            <h2>{search ? "Результаты поиска" : "Каталог салонов"}</h2>
+            <button className="text-button" onClick={() => {setQuery("");setShowCatalog(false);}}>К моим местам</button>
           </div>
-          <div className="salon-grid">
-            {mine.data.items.map((s) => (
-              <SalonCard key={s.id} salon={s} />
-            ))}
-          </div>
+          <Load {...publicData}>
+            {discover.length ? <div className="salon-grid">{discover.map((s) => <SalonCard key={s.id} salon={s} />)}</div>
+              : <Empty title={search ? "Место не найдено" : "Каталог пока пуст"} text={search ? "Попробуйте другое название, услугу или адрес." : "Новые опубликованные салоны появятся здесь."} />}
+          </Load>
         </>
-      )}
-      <div className="section-head">
-        <h2>{query ? "Результаты поиска" : "Открывайте новое"}</h2>
-        <span className="muted">
-          {publicData.data
-            ? plural(discover.length, "салон", "салона", "салонов")
-            : "…"}
-        </span>
-      </div>
-      <Load {...publicData}>
-        {discover.length ? (
-          <div className="salon-grid">
-            {discover.map((s) => (
-              <SalonCard key={s.id} salon={s} />
-            ))}
-          </div>
-        ) : (
-          <Empty
-            title={query ? "Салон не найден" : "Новых салонов пока нет"}
-            text={
-              query
-                ? "Проверьте название или используйте персональную ссылку салона."
-                : "Вы уже знакомы со всеми салонами, которые сейчас открыты."
-            }
-          />
-        )}
-      </Load>
+      ) : <Load {...mine}>
+        {familiar.length ? <>
+          <div className="section-head"><h2>Знакомое место</h2></div>
+          <div className="familiar-feature"><SalonCard salon={familiar[0]!} /></div>
+          {familiar.length > 1 && <><div className="section-head"><h2>Остальные мои места</h2></div>
+            <div className="salon-grid">{familiar.slice(1).map((s) => <SalonCard key={s.id} salon={s} />)}</div></>}
+        </> : <Empty title="Здесь появится ваше место" text="Найдите салон по названию или услуге и сохраните его. После визита он тоже появится здесь." />}
+        <button className="button secondary" onClick={() => setShowCatalog(true)}>Открыть каталог салонов</button>
+      </Load>}
     </>
   );
 }
@@ -522,9 +503,13 @@ export function StorefrontView({
 }
 export function SalonPage() {
   const { code } = useParams();
+  const [section, setSection] = useState<"services" | "visits" | "bonuses">("services");
   const data = useApi<Salon>(`/public/salons/${code}`),
     catalog = useApi<Catalog>(`/public/salons/${code}/catalog`),
     mine = useApi<Items<Salon>>("/me/salons");
+  const visits = useApi<Items<Booking>>(section === "visits" && data.data ? `/me/bookings?limit=100&tenantId=${data.data.id}` : null);
+  const programs = useApi<Items<{id:string;publicCode:string;name:string;serviceName:string;progress:number;visitsRequired:number;availableRewards:number}>>(section === "bonuses" ? "/me/loyalty" : null);
+  const rewards = useApi<Items<{id:string;publicCode:string;programName:string;serviceId:string;serviceName:string;status:string}>>(section === "bonuses" ? "/me/loyalty-rewards" : null);
   const action = useAction();
   const favorite = mine.data?.items.some(
     (s) => s.id === data.data?.id && s.favorite,
@@ -556,9 +541,26 @@ export function SalonPage() {
       </div>
       {action.feedback}
       <Load {...data}>
-        {data.data && (
-          <StorefrontView salon={data.data} catalog={catalog.data} />
-        )}
+        {data.data && <>
+          <div className="salon-context-tabs" role="tablist" aria-label="Разделы салона">
+            {([ ["services", "Услуги и мастера"], ["visits", "Визиты"], ["bonuses", "Бонусы и акции"] ] as const).map(([value, label]) =>
+              <button key={value} role="tab" aria-selected={section === value} className={section === value ? "selected" : ""} onClick={() => setSection(value)}>{label}</button>)}
+          </div>
+          {section === "services" && <StorefrontView salon={data.data} catalog={catalog.data} />}
+          {section === "visits" && <Load {...visits}>{visits.data?.items.length
+            ? <div className="booking-grid">{visits.data.items.map((booking) => <BookingCard key={booking.id} booking={booking} />)}</div>
+            : <Empty title="В этом салоне пока нет визитов" text="Выберите услугу и удобное время, чтобы создать первую запись." />}
+            <Link className="button primary" to={`/s/${code}/book`}>Записаться в {data.data.name}</Link>
+          </Load>}
+          {section === "bonuses" && <section className="panel"><h2>Выгоды в {data.data.name}</h2>
+            <Load loading={programs.loading || rewards.loading} error={programs.error || rewards.error}>
+              {programs.data?.items.filter((program) => program.publicCode === code).map((program) => <div className="history-row" key={program.id}><div><strong>{program.name}</strong><p>{program.serviceName} · {program.progress} из {program.visitsRequired} посещений · наград: {program.availableRewards}</p></div></div>)}
+              {rewards.data?.items.filter((reward) => reward.publicCode === code && reward.status === "issued").map((reward) => <div className="history-row" key={reward.id}><div><strong>{reward.programName}</strong><p>{reward.serviceName} · награда доступна для записи</p></div><Link to={`/s/${code}/book?service=${reward.serviceId}&reward=${reward.id}`}>Использовать</Link></div>)}
+              {!programs.data?.items.some((program) => program.publicCode === code) && !rewards.data?.items.some((reward) => reward.publicCode === code) && <Empty title="Бонусов пока нет" text="Если салон запустит программу, её условия появятся здесь." />}
+            </Load>
+            <div className="inline-actions"><Link className="button primary" to="/me/loyalty">Все бонусы</Link><Link className="button secondary" to="/me/offers">Акции и предложения</Link></div>
+          </section>}
+        </>}
       </Load>
     </>
   );
@@ -854,6 +856,12 @@ function SalonPreferences({ salon }: { salon: Salon }) {
 }
 export function ProfilePage() {
   const auth = useAuth();
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+  const selectTheme = (value: "light" | "dark") => {
+    setTheme(value);
+    document.documentElement.dataset.theme = value;
+    try { localStorage.setItem("ryadom-theme", value); } catch { /* Storage may be unavailable in a WebView. */ }
+  };
   const data = useApi<Items<Salon>>("/me/salons");
   const all = useApi<Items<Salon>>("/public/salons");
   const a = useAction();
@@ -867,6 +875,14 @@ export function ProfilePage() {
         title="Профиль и уведомления"
         description="Вы решаете, какие сообщения получать и в каких программах участвовать."
       />
+      <section className="panel profile-theme"><h2>Тема оформления</h2>
+        <div className="theme-options" role="group" aria-label="Тема оформления">
+          <button type="button" aria-pressed={theme === "light"} className={theme === "light" ? "selected" : ""} onClick={() => selectTheme("light")}><span aria-hidden="true">☀</span> Светлая</button>
+          <button type="button" aria-pressed={theme === "dark"} className={theme === "dark" ? "selected" : ""} onClick={() => selectTheme("dark")}><span aria-hidden="true">☾</span> Тёмная</button>
+        </div>
+      </section>
+      <div className="profile-links"><Link to="/me/events">События</Link><Link to="/me/waitlist">Запросы «Живого окна»</Link><Link to="/me/offers">Предложения</Link><Link to="/create-salon">Создать салон</Link></div>
+      {!!auth.me?.memberships.length && <section className="panel"><h2>Рабочие кабинеты</h2><div className="profile-links">{auth.me.memberships.map((membership) => <Link key={membership.id} to={`/work/${membership.tenantId}/calendar`}>{membership.tenantName} · {membership.role === "owner" ? "владелец" : membership.role === "admin" ? "администратор" : "мастер"}</Link>)}</div></section>}
       <div className="two-columns">
         <section className="panel">
           <h2>Ваш профиль</h2>

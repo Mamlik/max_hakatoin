@@ -158,12 +158,19 @@ export function salonRoutes(app: FastifyInstance) {
     "/api/v1/public/salons",
     {
       public: true,
-      description: "Поиск опубликованных салонов по названию или коду",
+      description: "Поиск опубликованных салонов по названию, коду, категории и активным услугам",
     },
     async ({ db, q }) => {
       const result = await rows<Tenant>(
         db,
-        "SELECT * FROM tenants WHERE status='published' AND ($1='' OR lower(published_profile->>'name') LIKE '%'||lower($1)||'%' OR public_code=$1) ORDER BY name LIMIT 100",
+        `SELECT t.* FROM tenants t WHERE t.status='published' AND
+          ($1='' OR lower(t.published_profile->>'name') LIKE '%'||lower($1)||'%'
+           OR lower(t.published_profile->>'category') LIKE '%'||lower($1)||'%'
+           OR lower(t.published_profile->>'address') LIKE '%'||lower($1)||'%'
+           OR lower(t.public_code)=lower($1)
+           OR EXISTS (SELECT 1 FROM services s WHERE s.tenant_id=t.id AND s.active=true
+             AND (lower(s.name) LIKE '%'||lower($1)||'%' OR lower(s.description) LIKE '%'||lower($1)||'%')))
+         ORDER BY t.name LIMIT 100`,
         [(q.query ?? "").slice(0, 120)],
       );
       return list(await Promise.all(result.map((t) => publicSalon(db, t))));
