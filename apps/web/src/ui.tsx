@@ -194,6 +194,11 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <path d="m15 15 5 5" />
       </>
     ),
+    menu: (
+      <>
+        <path d="M5 7h14M5 12h14M5 17h14" />
+      </>
+    ),
   };
   return (
     <svg

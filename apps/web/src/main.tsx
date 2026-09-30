@@ -10,6 +10,7 @@ import {
   useLocation,
   useParams,
   Navigate,
+  useNavigationType,
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./api";
 import { Icon, labels } from "./ui";
@@ -48,6 +49,7 @@ try {
 } catch {
   document.documentElement.dataset.theme = "light";
 }
+import "./ui-experiments.css";
 
 function App() {
   const auth = useAuth();
@@ -59,6 +61,8 @@ function App() {
   const pathTenantId = location.pathname.match(/^\/work\/([^/]+)/)?.[1];
   const member = auth.me?.memberships.find((m) => m.tenantId === pathTenantId);
   const tenantId = member ? pathTenantId : undefined;
+  const navigationType = useNavigationType();
+  const [mobileMoreOpen, setMobileMoreOpen] = React.useState(false);
   // A deep link resolves to a path while AuthProvider sits outside the router,
   // so the router performs the navigation once the path is known.
   React.useEffect(() => {
@@ -81,6 +85,10 @@ function App() {
     button.onClick(back);
     return () => button.offClick(back);
   }, [location.pathname]);
+  React.useEffect(() => {
+    setMobileMoreOpen(false);
+    if (navigationType !== "POP") window.scrollTo({ top: 0, left: 0 });
+  }, [location.pathname, navigationType]);
   if (auth.loading)
     return (
       <div className="boot">
@@ -201,7 +209,8 @@ function App() {
         </div>
       </div>
     );
-  const personal = [
+  type NavigationItem = [string, string, string];
+  const personal: NavigationItem[] = [
     ["/me/salons", "salons", "Мои места"],
     ["/me/bookings", "calendar", "Записи"],
     ["/me/loyalty", "gift", "Бонусы"],
@@ -210,29 +219,42 @@ function App() {
     ["/me/events", "bell", "События"],
     ["/me/waitlist", "calendar", "Живое окно"],
   ];
-  const work = [
+  const workPaths: NavigationItem[] = [
     ["calendar", "calendar", "Календарь"],
-    ...(member?.role !== "master"
-      ? [
-          ["customers", "user", "Клиенты"],
-          ["catalog", "salons", "Услуги и мастера"],
-          ["schedule", "calendar", "График"],
-          ["live-window", "calendar", "Живое окно"],
-          ["analytics", "chart", "Статистика"],
-        ]
-      : []),
-    ...(member?.role === "owner"
-      ? [
-          ["loyalty", "gift", "Лояльность"],
-          ["partners", "gift", "Партнёрства"],
-          ["promotions", "gift", "Акции"],
-          ["settings", "settings", "Настройки"],
-          ["staff-access", "user", "Доступ"],
-        ]
-      : []),
-    ...(member?.role !== "master" ? [["audit", "bell", "Журнал"]] : []),
-  ].map(([p, i, l]) => [`/work/${tenantId}/${p}`, i, l]);
-  work.push(...personal.slice(0, 4).map(([to, icon, label]) => [to!, icon!, label === "Записи" ? "Мои записи" : label!]));
+    ...(member?.role !== "master" ? [
+      ["customers", "user", "Клиенты"],
+      ["catalog", "salons", "Услуги и мастера"],
+      ["schedule", "calendar", "График"],
+      ["live-window", "calendar", "Живое окно"],
+      ["analytics", "chart", "Статистика"],
+    ] as NavigationItem[] : []),
+    ...(member?.role === "owner" ? [
+      ["loyalty", "gift", "Лояльность"],
+      ["partners", "gift", "Партнёрства"],
+      ["promotions", "gift", "Акции"],
+      ["settings", "settings", "Настройки"],
+      ["staff-access", "user", "Доступ"],
+    ] as NavigationItem[] : []),
+    ...(member?.role !== "master" ? [["audit", "bell", "Журнал"]] as NavigationItem[] : []),
+  ];
+  const work: NavigationItem[] = workPaths.map(([path, icon, label]) => [`/work/${tenantId}/${path}`, icon, label]);
+  work.push(...personal.slice(0, 4).map(([to, icon, label]): NavigationItem => [to, icon, label === "Записи" ? "Мои записи" : label]));
+  const navigation = tenantId ? work : personal;
+  const preferredMobileLabels = tenantId
+    ? ["Календарь", "Клиенты", "Услуги и мастера", "Настройки"]
+    : ["Мои места", "Записи", "Живое окно", "Профиль"];
+  const mobilePrimary: NavigationItem[] = preferredMobileLabels
+    .map((label) => navigation.find((item) => item[2] === label))
+    .filter((item): item is NavigationItem => Boolean(item));
+  for (const item of navigation)
+    if (mobilePrimary.length < 4 && !mobilePrimary.includes(item)) mobilePrimary.push(item);
+  const mobileMore = navigation.filter((item) => !mobilePrimary.includes(item));
+  const navLink = ([to, icon, label]: NavigationItem, mobile = false) => (
+    <NavLink key={to} to={to} className={({ isActive }) =>
+      `nav-item ${mobile ? "mobile-nav-item" : ""} ${isActive ? "active" : ""}`}>
+      <Icon name={icon} /><span>{label}</span>
+    </NavLink>
+  );
   return (
     <div className={`app-shell ${tenantId ? `work-shell ${member?.role}-shell` : "personal-shell"}`}>
       <header className="mobile-appbar">
@@ -282,19 +304,8 @@ function App() {
           </select>
           {member && <small>{labels[member.role]}</small>}
         </div>
-        <nav>
-          {(tenantId ? work : personal).map(([to, icon, label]) => (
-            <NavLink
-              key={to}
-              to={to!}
-              className={({ isActive }) =>
-                `nav-item ${isActive ? "active" : ""}`
-              }
-            >
-              <Icon name={icon!} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
+        <nav className="desktop-nav">
+          {navigation.map((item) => navLink(item))}
         </nav>
         <div className="sidebar-bottom">
           <Link
@@ -324,6 +335,72 @@ function App() {
             </button>
           </div>
         </div>
+        <nav className="mobile-nav" aria-label="Основная навигация">
+          {mobilePrimary.map((item) => navLink(item, true))}
+          <button
+            className={`nav-item mobile-nav-item ${mobileMoreOpen ? "active" : ""}`}
+            aria-expanded={mobileMoreOpen}
+            aria-controls="mobile-more-sheet"
+            onClick={() => setMobileMoreOpen((open) => !open)}
+          >
+            <Icon name="menu" />
+            <span>Ещё</span>
+          </button>
+        </nav>
+        {mobileMoreOpen && (
+          <div className="mobile-more-backdrop" onClick={() => setMobileMoreOpen(false)}>
+            <section
+              id="mobile-more-sheet"
+              className="mobile-more-sheet"
+              aria-label="Ещё"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="section-head">
+                <h2>Ещё</h2>
+                <button
+                  className="icon-button"
+                  aria-label="Закрыть меню"
+                  onClick={() => setMobileMoreOpen(false)}
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+              <label className="mobile-workspace-switch">
+                <span>Пространство</span>
+                <select
+                  aria-label="Пространство в мобильном меню"
+                  value={tenantId ?? "personal"}
+                  onChange={(event) =>
+                    navigate(
+                      event.target.value === "personal"
+                        ? "/me/bookings"
+                        : `/work/${event.target.value}/calendar`,
+                    )
+                  }
+                >
+                  <option value="personal">Личный кабинет</option>
+                  {auth.me.memberships.map((membership) => (
+                    <option key={membership.id} value={membership.tenantId}>
+                      {membership.tenantName} · {labels[membership.role]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <nav>{mobileMore.map((item) => navLink(item))}</nav>
+              <Link className="nav-item" to="/create-salon">
+                <Icon name="plus" />
+                <span>Создать салон</span>
+              </Link>
+              <button
+                className="nav-item mobile-logout"
+                onClick={auth.demo ? auth.logout : () => window.WebApp?.close?.()}
+              >
+                <Icon name={auth.demo ? "logout" : "close"} />
+                <span>{auth.demo ? "Выйти" : "Закрыть приложение"}</span>
+              </button>
+            </section>
+          </div>
+        )}
       </aside>
       <div className="main-column">
         <header className="topbar">

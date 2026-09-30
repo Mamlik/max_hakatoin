@@ -1377,6 +1377,10 @@
                   "style": {
                     "type": "object",
                     "properties": {
+                      "schemaVersion": {
+                        "type": "number",
+                        "const": 2
+                      },
                       "accent": {
                         "type": "string",
                         "enum": [
@@ -1422,12 +1426,121 @@
                           "format": "uuid",
                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                         }
+                      },
+                      "themePreset": {
+                        "type": "string",
+                        "enum": [
+                          "studio",
+                          "editorial",
+                          "noir"
+                        ]
+                      },
+                      "colorMode": {
+                        "type": "string",
+                        "enum": [
+                          "light",
+                          "dark"
+                        ]
+                      },
+                      "coverFocalPoint": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
+                          },
+                          "y": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "serviceCards": {
+                        "type": "object",
+                        "properties": {
+                          "variant": {
+                            "type": "string",
+                            "enum": [
+                              "compact",
+                              "media"
+                            ]
+                          },
+                          "showDescription": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "variant",
+                          "showDescription"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "staffCards": {
+                        "type": "object",
+                        "properties": {
+                          "variant": {
+                            "type": "string",
+                            "enum": [
+                              "compact",
+                              "profile"
+                            ]
+                          },
+                          "showDescription": {
+                            "type": "boolean"
+                          },
+                          "showRating": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "variant",
+                          "showDescription",
+                          "showRating"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "sectionOrder": {
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "services",
+                            "staff",
+                            "gallery"
+                          ]
+                        }
+                      },
+                      "galleryMediaIds": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        }
                       }
                     },
                     "required": [
+                      "schemaVersion",
                       "accent",
                       "description",
-                      "categoryOrder"
+                      "categoryOrder",
+                      "themePreset",
+                      "colorMode",
+                      "coverFocalPoint",
+                      "serviceCards",
+                      "staffCards",
+                      "sectionOrder",
+                      "galleryMediaIds"
                     ],
                     "additionalProperties": false
                   }

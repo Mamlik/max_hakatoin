@@ -6,12 +6,14 @@
   "uiBranch": "codex/ui-experiments",
   "reviewsBaseBranch": "codex/live-window",
   "reviewsBaseCommit": "34f17ebe135a4783fa271893ac0769bbdd9839d6",
-  "phase": "MERGED_TO_MAIN",
+  "phase": "UI_EXPERIMENT_READY",
   "completedStages": [
     "reviews_spec",
     "reviews_implementation",
     "reviews_qa",
-    "merge"
+    "merge",
+    "ui_spec",
+    "ui_implementation"
   ],
   "automationIds": {
     "reviews_spec": "1-6",
@@ -24,7 +26,8 @@
   "stageCommits": {
     "reviews_implementation": "cb04096",
     "reviews_qa": "ee445b0",
-    "merge": "d17254f"
+    "merge": "d17254f",
+    "ui_implementation": "6d6eb68"
   },
   "mergeBaseOriginMain": "17a1b5552a20e1aa9c048683979ec63360290ec8",
   "attempts": {
@@ -32,11 +35,11 @@
     "reviews_implementation": 1,
     "reviews_qa": 1,
     "merge": 1,
-    "ui_spec": 0,
-    "ui_implementation": 0
+    "ui_spec": 1,
+    "ui_implementation": 1
   },
-  "lastCompletedMilestone": "main-post-merge-regression-green",
+  "lastCompletedMilestone": "ui-experiment-ready",
   "lastError": null,
   "blockedReason": null,
-  "updatedAt": "2026-09-28T06:55:00+03:00"
+  "updatedAt": "2026-09-28T12:24:12+03:00"
 }

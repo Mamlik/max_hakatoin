@@ -114,6 +114,7 @@ npm run dev
 | `PUBLIC_APP_URL` | Внешний адрес интерфейса; без завершающего `/` |
 | `DATABASE_URL` | PostgreSQL для локальных процессов; Compose задаёт внутренний адрес сам |
 | `REDIS_URL` | Redis для локального worker; по умолчанию `localhost:6380` |
+| `STOREFRONT_THEMES_V2=true` | Включает безопасные темы, карточки, галерею и живой предпросмотр витрины |
 | 8080 | Демо через Docker |
 | 5173 / 3100 | Интерфейс / API при разработке |
 | 5432 / 6380 | PostgreSQL / Redis только с `compose.dev.yaml`, доступны на loopback |

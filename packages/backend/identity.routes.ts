@@ -98,6 +98,7 @@ export function identityRoutes(app: FastifyInstance) {
       demo: config.MAX_MODE === "mock",
       botName: config.MAX_BOT_NAME,
       appUrl: config.PUBLIC_APP_URL,
+      storefrontThemesV2: config.STOREFRONT_THEMES_V2,
     }),
   );
   route(
