@@ -1,5 +1,17 @@
 import { test, expect, type Page } from "@playwright/test";
 
+const pageErrors = new WeakMap<Page, string[]>();
+test.beforeEach(({ page }) => {
+  const errors: string[] = [];
+  pageErrors.set(page, errors);
+  page.on("pageerror", (error) => errors.push(error.message));
+});
+test.afterEach(async ({ page }) => {
+  if (test.info().status !== test.info().expectedStatus) return;
+  expect(pageErrors.get(page) ?? [], "Unexpected browser errors").toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "Page must fit its viewport").toBe(true);
+});
+
 async function openWork(page: Page, salon: string, role: string) {
   await page.getByRole("link", { name: "Профиль", exact: true }).click();
   await page.getByRole("link", { name: new RegExp(`${salon}.*${role}`) }).click();
@@ -13,6 +25,75 @@ const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 );
+
+test('unsaved salon preferences survive refresh and failed reload', async ({page}) => {
+  await page.goto('/'); await page.getByRole('button',{name:/Клиент Записаться/}).click();
+  await page.getByRole('link',{name:'Профиль',exact:true}).click();
+  const checkbox=page.locator('.salon-preferences-grid input[type=checkbox]').first();
+  await expect(checkbox).toBeVisible(); const original=await checkbox.isChecked(); await checkbox.setChecked(!original);
+  await page.evaluate(()=>window.dispatchEvent(new Event('salon-data-changed')));
+  await expect(checkbox).toBeChecked({checked:!original});
+  await page.route('**/me/salons/*/preferences',route=>route.abort());
+  await page.evaluate(()=>window.dispatchEvent(new Event('salon-data-changed')));
+  await expect(page.locator('.salon-preferences-grid [role=alert]')).toBeVisible();
+  await page.unroute('**/me/salons/*/preferences');
+  await page.evaluate(()=>window.dispatchEvent(new Event('salon-data-changed')));
+  await expect(checkbox).toBeChecked({checked:!original});
+});
+
+test('narrow schedule and keyboard modal preserve unsaved draft after network error', async ({page}) => {
+  await page.goto('/'); await page.getByRole('button',{name:/Владелец · Линия/}).click(); await openWork(page,'Линия','владелец');
+  await page.setViewportSize({width:320,height:850});
+  await page.getByRole('link',{name:'График',exact:true}).click();
+  await expect(page.locator('.interval').first()).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.getByRole('link',{name:'Настройки',exact:true}).click();
+  const description=page.getByRole('textbox',{name:'Описание',exact:true});
+  await description.fill('Несохранённое описание после сбоя');
+  await page.route('**/storefront/draft',route=>route.abort());
+  await page.evaluate(()=>window.dispatchEvent(new Event('salon-data-changed')));
+  await expect(page.getByRole('button',{name:'Повторить загрузку оформления'})).toBeVisible();
+  await page.unroute('**/storefront/draft');
+  await page.getByRole('button',{name:'Повторить загрузку оформления'}).click();
+  await expect(description).toHaveValue('Несохранённое описание после сбоя');
+  const preview=page.getByRole('button',{name:'Предпросмотр',exact:true});await preview.click();
+  const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();
+  for(let i=0;i<8;i++){await page.keyboard.press('Tab');expect(await dialog.evaluate(el=>el.contains(document.activeElement))).toBe(true);}
+  await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(preview).toBeFocused();
+});
+
+test('late quote response cannot restore a previous service selection',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:/Клиент Записаться/}).click();
+  await page.locator('main a.salon-card[href="/s/line"]').click();
+  await page.getByRole('link',{name:'Записаться',exact:true}).click();
+  const service=page.getByLabel('Услуга');
+  await service.selectOption((await service.locator('option').filter({hasText:'Стрижка и укладка'}).getAttribute('value'))!);
+  const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);
+  await page.locator('input[type=date]').fill(tomorrow.toLocaleDateString('en-CA'));
+  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  let started!:()=>void;const pending=new Promise<void>(resolve=>{started=resolve;});
+  await page.route('**/booking-quotes',async route=>{const response=await route.fetch();started();await gate;await route.fulfill({response});});
+  await page.locator('.slots-grid button').first().click();await pending;
+  await page.getByLabel('Услуга').selectOption('');
+  const response=page.waitForResponse(response=>response.url().endsWith('/booking-quotes'));release();await response;
+  await expect(page.getByRole('button',{name:'Подтвердить запись',exact:true})).toHaveCount(0);
+  await expect(page.locator('.booking-summary h3')).toHaveText('Выберите время');
+});
+
+test('catalog continues to the next page',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:/Клиент Записаться/}).click();
+  await page.route('**/public/salons?*',async route=>{
+    const response=await route.fetch();const json=await response.json();
+    const second=new URL(route.request().url()).searchParams.has('cursor');
+    json.data.items=json.data.items.slice(second?1:0,second?2:1);json.data.nextCursor=second?null:'1';
+    await route.fulfill({response,json});
+  });
+  await page.getByRole('button',{name:'Открыть каталог салонов'}).click();
+  await expect(page.locator('a.salon-card')).toHaveCount(1);
+  await page.getByRole('button',{name:'Показать ещё салоны'}).click();
+  await expect(page.locator('a.salon-card')).toHaveCount(2);
+  await expect(page.getByRole('button',{name:'Показать ещё салоны'})).toHaveCount(0);
+});
 
 test("my places search and saved theme work on both layouts", async ({ page }) => {
   await page.goto("/");
@@ -42,7 +123,7 @@ test("profile settings focus one salon and can show all", async ({ page }) => {
   await expect(page.locator(".salon-preferences-grid .panel")).toHaveCount(1);
   await page.getByRole("button", { name: "Выбрать салон для настроек" }).click();
   await page.getByLabel("Поиск салона в настройках").fill("лиНиЯ");
-  await page.locator(".salon-picker-options button").filter({ hasText: "Линия" }).click();
+  await page.locator(".salon-picker-options").getByRole("button", { name: "Линия · студия волос", exact: true }).click();
   await expect(page.locator(".salon-preferences-grid h3")).toHaveText("Линия · студия волос");
   await page.screenshot({ path: `test-results/profile-salon-${test.info().project.name}.png`, fullPage: true });
   await page.getByRole("button", { name: "Выбрать салон для настроек" }).click();
@@ -73,6 +154,11 @@ test("owner calendar changes month and filters masters", async ({ page }) => {
   await page.getByRole("button", { name: /Владелец · Линия/ }).click();
   await openWork(page, "Линия", "владелец");
   await expect(page.getByRole("heading", { name: "Записи салона" })).toBeVisible();
+  if (test.info().project.name === "mobile") {
+    await expect(page.locator(".work-shell .sidebar")).toHaveCSS("position", "fixed");
+    const navigation = await page.locator(".sidebar").boundingBox();
+    expect(navigation!.y + navigation!.height).toBeGreaterThan(page.viewportSize()!.height - 3);
+  }
   await page.getByRole("button", { name: "Предыдущий месяц" }).click();
   expect(await page.locator(".month-days button").count()).toBeGreaterThanOrEqual(28);
   await page.getByRole("button", { name: "Все мастера" }).click();
@@ -100,6 +186,14 @@ test("master calendar excludes staff controls and CRM", async ({ page }) => {
     await expect(navigation.getByRole("link", { name: "Мои места" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Мои записи" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Профиль" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Бонусы" })).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 700 });
+    for (const name of ["Календарь", "Мои места", "Мои записи", "Бонусы", "Профиль"]) {
+      const item = await navigation.getByRole("link", { name, exact: true }).boundingBox();
+      expect(item!.x).toBeGreaterThanOrEqual(0);
+      expect(item!.x + item!.width).toBeLessThanOrEqual(320);
+    }
+    await page.screenshot({ path: "test-results/master-navigation-mobile.png" });
     const bottom = await navigation.boundingBox();
     expect(bottom!.y + bottom!.height).toBeGreaterThan(page.viewportSize()!.height - 3);
   }
@@ -352,6 +446,12 @@ test("salon media and friendly timezones reach the published storefront", async 
   await expect(timezone.getByText("МСК+2", { exact: true })).toBeVisible();
 
   const files = page.locator('input[type="file"]');
+  const description = page.getByRole("textbox", { name: "Описание", exact: true });
+  const unsavedDescription = `Описание перед сменой аватара ${Date.now()}`;
+  const contact = page.getByLabel("Публичный контакт", { exact: true });
+  const originalContact = await contact.inputValue();
+  await contact.fill("Несохранённый контакт при смене аватара");
+  await description.fill(unsavedDescription);
   await files.nth(0).setInputFiles({
     name: "logo.png",
     mimeType: "image/png",
@@ -359,6 +459,9 @@ test("salon media and friendly timezones reach the published storefront", async 
   });
   await expect(page.getByText("Аватар салона обновлён и виден клиентам", { exact: true })).toBeVisible();
   await expect(page.getByAltText("Аватар салона")).toBeVisible();
+  await expect(description).toHaveValue(unsavedDescription);
+  await expect(contact).toHaveValue("Несохранённый контакт при смене аватара");
+  await contact.fill(originalContact);
   await files.nth(1).setInputFiles({
     name: "cover.png",
     mimeType: "image/png",
@@ -527,7 +630,7 @@ test("waitlist offers the free slots it refuses to queue for", async ({
     .click();
   await expect(page.locator(".app-shell")).toBeVisible();
   await page.getByRole("link", { name: "Мои места", exact: true }).click();
-  await page.locator("main a").filter({ hasText: "Линия" }).first().click();
+  await page.locator('main a.salon-card[href="/s/line"]').first().click();
   await page
     .locator(".service-row")
     .filter({ hasText: "Стрижка и укладка" })

@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Link,
   useNavigate,
@@ -110,7 +110,7 @@ export function BookingsPage() {
     [tenant, setTenant] = useState(""),
     [day, setDay] = useState("");
   const data = useApi<Items<Booking>>(
-    `/me/bookings?limit=100&state=${state}${tenant ? `&tenantId=${tenant}` : ""}${day ? `&from=${day}T00:00:00%2B03:00&to=${day}T23:59:59%2B03:00` : ""}`,
+    `/me/bookings?limit=100&state=${state}${tenant ? `&tenantId=${tenant}` : ""}${day ? `&day=${day}` : ""}`,
     true,
   );
   const salons = useApi<Items<Salon>>("/me/salons");
@@ -233,12 +233,27 @@ export function DiscoverPage() {
   const [query, setQuery] = useState("");
   const [showCatalog, setShowCatalog] = useState(false);
   const search = query.trim();
+  const [extra, setExtra] = useState<Salon[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>();
+  const more = useAction();
+  const searchKey = `${search}:${showCatalog}`;
+  const currentSearch = useRef(searchKey);
+  currentSearch.current = searchKey;
   const publicData = useApi<Items<Salon>>(
     search || showCatalog ? `/public/salons?query=${encodeURIComponent(search)}` : null,
   );
   const mine = useApi<Items<Salon>>("/me/salons");
+  useEffect(() => { setExtra([]); setNextCursor(undefined); }, [searchKey, publicData.data]);
   const familiar = [...(mine.data?.items ?? [])].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite));
-  const discover = publicData.data?.items ?? [];
+  const discover = [...(publicData.data?.items ?? []), ...extra];
+  const cursor = nextCursor === undefined ? publicData.data?.nextCursor : nextCursor;
+  const loadMore = () => more.run(async () => {
+    const key = searchKey;
+    const result = await api<Items<Salon>>(`/public/salons?query=${encodeURIComponent(search)}&cursor=${encodeURIComponent(cursor!)}`);
+    if (currentSearch.current !== key) return;
+    setExtra(items => [...items, ...result.items.filter(item => !items.some(existing => existing.id === item.id))]);
+    setNextCursor(result.nextCursor);
+  }, '', false);
   return (
     <>
       <PageTitle
@@ -266,6 +281,8 @@ export function DiscoverPage() {
             {discover.length ? <div className="salon-grid">{discover.map((s) => <SalonCard key={s.id} salon={s} />)}</div>
               : <Empty title={search ? "Место не найдено" : "Каталог пока пуст"} text={search ? "Попробуйте другое название, услугу или адрес." : "Новые опубликованные салоны появятся здесь."} />}
           </Load>
+          {more.feedback}
+          {cursor && <button className="button secondary" disabled={more.busy} onClick={() => void loadMore()}>Показать ещё салоны</button>}
         </>
       ) : <Load {...mine}>
         {familiar.length ? <>
@@ -296,6 +313,7 @@ export function Asset({
   useEffect(() => {
     let alive = true,
       local = "";
+    setUrl("");
     if (!media) {
       setUrl("");
       return;
@@ -314,8 +332,9 @@ export function Asset({
       .then((blob) => {
         local = URL.createObjectURL(blob);
         if (alive) setUrl(local);
+        else URL.revokeObjectURL(local);
       })
-      .catch(() => setUrl(""));
+      .catch(() => { if (alive) setUrl(""); });
     return () => {
       alive = false;
       if (local) URL.revokeObjectURL(local);
@@ -750,7 +769,18 @@ function SalonPreferences({ salon }: { salon: Salon }) {
   const data = useApi<Preference>(`/me/salons/${salon.id}/preferences`);
   const [prefs, setPrefs] = useState<Preference>();
   const a = useAction();
-  useEffect(() => setPrefs(data.data), [data.data]);
+  const baseline = useRef<Preference | undefined>(undefined);
+  useEffect(() => {
+    const next = data.data;
+    if (!next) return;
+    const previous = baseline.current;
+    baseline.current = next;
+    setPrefs(local => {
+      if (!local || !previous) return next;
+      const changes = Object.keys(local).filter(key => key !== 'version' && local[key as keyof Preference] !== previous[key as keyof Preference]);
+      return { ...next, ...Object.fromEntries(changes.map(key => [key, local[key as keyof Preference]])) };
+    });
+  }, [data.data]);
   return (
     <section className="panel">
       <h3>{salon.name}</h3>

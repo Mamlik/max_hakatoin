@@ -142,7 +142,7 @@ export function loyaltyRoutes(app: FastifyInstance) {
         );
       const result = required(await one<{id:string}>(db,old
         ? "UPDATE loyalty_programs SET visits_required=$2,enabled=$3,status=CASE WHEN $3 THEN 'active' ELSE 'paused' END,version=version+1 WHERE id=$1 RETURNING *"
-        : "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required,enabled,status) VALUES($1,$2,$3,$4,CASE WHEN $4 THEN 'active' ELSE 'paused' END) RETURNING *",
+        : "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required,enabled,status,free_visits_count) VALUES($1,$2,$3,$4,CASE WHEN $4 THEN 'active' ELSE 'paused' END,1) RETURNING *",
         old ? [old.id,b.visitsRequired,b.enabled] : [p.t,b.serviceId,b.visitsRequired,b.enabled]));
       await audit(db, p.t!, actor.id, "loyalty.configured", result.id, {
         visitsRequired: b.visitsRequired,

@@ -26,7 +26,12 @@ export async function reservePromotion(db:DB,bookingId:string,versionId:string){
 export async function promotionOutcome(db:DB,bookingId:string,target:string){
   const r=await one<{version_id:string;status:string}>(db,'SELECT * FROM promotion_reservations WHERE booking_id=$1',[bookingId]);
   if(!r)return;
-  if(target==='completed'&&r.status==='reserved'){
+  if(target==='completed'&&r.status!=='used'){
+    if(r.status==='released'){
+      const capacity=required(await one<{use_limit:number|null;used_total:number;reserved:number}>(db,"SELECT v.use_limit,v.used_total,(SELECT count(*)::int FROM promotion_reservations r WHERE r.version_id=v.id AND r.status='reserved') reserved FROM promotion_versions v WHERE v.id=$1",[r.version_id]));
+      if(capacity.use_limit!==null&&capacity.used_total+capacity.reserved>=capacity.use_limit)
+        fail(409,'PROMOTION_EXHAUSTED','Лимит акции уже занят другой записью. Исправление требует разбора скидки.');
+    }
     await db.query("UPDATE promotion_reservations SET status='used' WHERE booking_id=$1",[bookingId]);
     await db.query('UPDATE promotion_versions SET used_total=used_total+1 WHERE id=$1',[r.version_id]);
   }else if(target!=='completed'&&r.status==='reserved')

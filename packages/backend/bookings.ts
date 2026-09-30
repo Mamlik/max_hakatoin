@@ -43,6 +43,7 @@ export async function voucherCheck(
     ),
   );
   if (
+    (v.revocation_pending && !existingBooking) ||
     !(
       v.status === "issued" ||
       (v.status === "reserved" && v.reserved_booking_id === existingBooking)
@@ -538,6 +539,7 @@ export async function releaseVoucher(
   );
   if (v.status === "redeemed") return;
   await db.query("INSERT INTO voucher_uses(voucher_id,booking_id,status) VALUES($1,$2,'released') ON CONFLICT(voucher_id,booking_id) DO UPDATE SET status='released'",[v.id,booking.id]);
+  if(v.revocation_pending)await db.query("UPDATE vouchers SET remaining_visits=(SELECT count(*) FROM voucher_uses WHERE voucher_id=$1 AND status='reserved'),status=CASE WHEN EXISTS(SELECT 1 FROM voucher_uses WHERE voucher_id=$1 AND status='reserved') THEN 'issued' ELSE 'revoked' END,version=version+1 WHERE id=$1",[v.id]);
   await db.query(
     "UPDATE vouchers SET status=CASE WHEN expires_at IS NOT NULL AND expires_at<=now() THEN 'expired' ELSE 'issued' END,reserved_booking_id=NULL,version=version+1 WHERE id=$1 AND status='reserved'",
     [v.id],
@@ -682,6 +684,8 @@ export async function outcome(
         }
       }
     if (target === "completed" && booking.previous_voucher_id) {
+      const consumed = await one<{status:string}>(db,'SELECT status FROM voucher_uses WHERE voucher_id=$1 AND booking_id=$2',[booking.previous_voucher_id,booking.id]);
+      if(consumed?.status !== 'redeemed' || booking.applied_voucher_id !== booking.previous_voucher_id){
       if (!restorePreviousVoucher)
         fail(
           409,
@@ -697,15 +701,15 @@ export async function outcome(
         booking.start_at.toISOString(),
         booking.price_minor_snapshot,
       );
-      await db.query(
-        "UPDATE vouchers SET status='redeemed',reserved_booking_id=NULL,redeemed_booking_id=$2,version=version+1 WHERE id=$1",
-        [v.id, booking.id],
-      );
+      await db.query("INSERT INTO voucher_uses(voucher_id,booking_id,status) VALUES($1,$2,'redeemed') ON CONFLICT(voucher_id,booking_id) DO UPDATE SET status='redeemed'",[v.id,booking.id]);
+      if(v.reward_type==='free_visits')await db.query("UPDATE vouchers SET remaining_visits=remaining_visits-1,status=CASE WHEN remaining_visits=1 THEN 'redeemed' ELSE 'issued' END,redeemed_booking_id=CASE WHEN remaining_visits=1 THEN $2 ELSE redeemed_booking_id END,version=version+1 WHERE id=$1 AND remaining_visits>0",[v.id,booking.id]);
+      else await db.query("UPDATE vouchers SET status='redeemed',reserved_booking_id=NULL,redeemed_booking_id=$2,version=version+1 WHERE id=$1",[v.id,booking.id]);
       await db.query(
         "UPDATE bookings SET applied_voucher_id=$2,discount_minor=$3 WHERE id=$1",
         [booking.id, v.id, voucherDiscount(v,booking.price_minor_snapshot)],
       );
       await voucherRevision(db, v.id, "redeemed_correction", actor.id, reason);
+      }
     }
   } else {
     if (booking.status !== "confirmed")

@@ -1,5 +1,5 @@
 import type { LoyaltyReward } from "./loyalty";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Link,
   useNavigate,
@@ -145,7 +145,10 @@ export function BookingForm({
     setWanted(null);
     if (match) void getQuote(match);
   }, [wanted, slots.data]);
+  const quoteGeneration = useRef(0);
   useEffect(() => {
+    quoteGeneration.current++;
+    setBusy(false);
     setSelectedSlot(undefined);
     setQuote(undefined);
     setChallenge("");
@@ -153,6 +156,7 @@ export function BookingForm({
     setError("");
   }, [serviceId, staffId, date, voucherId, customerId, rewardId,promotionId]);
   async function getQuote(slot: Slot, removeVoucher = false) {
+    const generation = ++quoteGeneration.current;
     setBusy(true);
     setError("");
     setSelectedSlot(slot);
@@ -176,16 +180,19 @@ export function BookingForm({
         : work
           ? `/work/${t}/booking-quotes`
           : `/salons/${selectedSalon!.id}/booking-quotes`;
-      setQuote(await api<Quote>(path, "POST", body));
+      const result = await api<Quote>(path, "POST", body);
+      if (generation !== quoteGeneration.current) return;
+      setQuote(result);
       setRemoval(removeVoucher);
     } catch (e) {
+      if (generation !== quoteGeneration.current) return;
       setError(e instanceof Error ? e.message : "Ошибка расчёта");
       setRemoval(
         e instanceof ApiError &&
           e.code === "VOUCHER_REMOVAL_CONFIRMATION_REQUIRED",
       );
     } finally {
-      setBusy(false);
+      if (generation === quoteGeneration.current) setBusy(false);
     }
   }
   async function confirm(acceptOverlap = false) {

@@ -114,6 +114,7 @@ export interface VisitReview {
   invalidated_at: Date | null;
 }
 export interface Voucher {
+  revocation_pending: boolean;
   id: string;
   campaign_id: string;
   version_id: string;

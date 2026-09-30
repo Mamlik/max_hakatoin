@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, useApi, useAuth } from "./api";
 import {
@@ -46,7 +46,23 @@ export function SettingsPage() {
     [preview, setPreview] = useState(false);
   const a = useAction();
   const avatarAction = useAction();
-  useEffect(() => setStyle(draft.data?.draftStyle), [draft.data?.version]);
+  const draftBaseline = useRef<Style | undefined>(undefined);
+  useEffect(() => { draftBaseline.current = undefined; setStyle(undefined); }, [t]);
+  useEffect(() => {
+    const next = draft.data?.draftStyle;
+    if (!next) return;
+    const baseline = draftBaseline.current;
+    draftBaseline.current = next;
+    setStyle((local) => {
+      if (!next || !local || !baseline) return next;
+      // Refreshes (including an avatar change) must preserve unsaved form fields.
+      const changed = Object.keys(local).filter((key) => {
+        const field = key as keyof Style;
+        return JSON.stringify(local[field]) !== JSON.stringify(baseline[field]);
+      });
+      return { ...next, ...Object.fromEntries(changed.map((key) => [key, local[key as keyof Style]])) };
+    });
+  }, [draft.data?.version, t]);
   useEffect(
     () => setStorefrontVersion(profile.data?.version),
     [profile.data?.version],
@@ -83,13 +99,15 @@ export function SettingsPage() {
       });
       setStyle((previous) => previous ? { ...previous, logoMediaId: media.id } : previous);
       setStorefrontVersion(updated.version);
-    }, "Аватар салона обновлён и виден клиентам");
+    }, profile.data?.status === "published"
+      ? "Аватар салона обновлён и виден клиентам"
+      : "Аватар салона обновлён. Он появится на витрине после публикации салона.");
   };
   return (
     <>
       <PageTitle
         title="Настройки салона"
-        description="Профиль, оформление и публикация. Черновик не меняет витрину до нажатия «Опубликовать»."
+        description="Профиль, оформление и публикация. Оформление витрины публикуется из черновика, аватар обновляется сразу."
       />
       <div className="profile-links"><Link to={`/work/${t}/live-window`}>Настройки и цепочки «Живого окна» →</Link></div>
       <Load {...profile}>
@@ -166,10 +184,10 @@ export function SettingsPage() {
                   </div>
                   <div className="salon-avatar-details">
                     <h2>Аватар салона</h2>
-                    <p>Логотип на витрине и в карточке салона. JPEG, PNG или WebP до 5 МБ.</p>
+                    <p>Логотип на витрине и в карточке салона. Выбранное фото сохраняется сразу. JPEG, PNG или WebP до 5 МБ.</p>
                     <FilePick
                       accept="image/jpeg,image/png,image/webp"
-                      disabled={avatarAction.busy}
+                      disabled={avatarAction.busy || a.busy}
                       onPick={(file) => void replaceAvatar(file)}
                       label={salon.publishedStyle?.logoMediaId ? "Заменить аватар" : "Добавить аватар"}
                     />
@@ -180,7 +198,8 @@ export function SettingsPage() {
                   <section className="panel">
                     <h2>Профиль</h2>
                     <SimpleForm
-                      key={salon.version}
+                      key={salon.id}
+                      submitDisabled={avatarAction.busy || a.busy}
                       fields={[
                         { name: "name", label: "Название" },
                         { name: "category", label: "Направление" },
@@ -277,6 +296,7 @@ export function SettingsPage() {
                       Один шаблон · адаптивный
                     </span>
                   </div>
+                  {draft.error && <div className="notice error" role="alert">{draft.error}<button className="text-button" onClick={draft.reload}>Повторить загрузку оформления</button></div>}
                   {style && (
                     <>
                       <div className="two-columns">
@@ -370,7 +390,7 @@ export function SettingsPage() {
                           >
                             <FilePick
                               accept="image/jpeg,image/png,image/webp"
-                              disabled={a.busy}
+                              disabled={a.busy || avatarAction.busy}
                               onPick={(f) => void upload("cover", f)}
                               label="Выбрать обложку"
                             />
@@ -385,7 +405,7 @@ export function SettingsPage() {
                       <div className="inline-actions">
                         <button
                           className="button primary"
-                          disabled={a.busy}
+                          disabled={a.busy || avatarAction.busy}
                           onClick={() =>
                             void a.run(
                               async () => {
@@ -414,6 +434,7 @@ export function SettingsPage() {
                         </button>
                         <CommandButton
                           path={`/work/${t}/storefront/publish`}
+                          disabled={avatarAction.busy || a.busy}
                           body={{
                             expectedVersion: storefrontVersion ?? salon.version,
                           }}

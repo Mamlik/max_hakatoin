@@ -511,7 +511,7 @@ export function PartnersPage() {
             <small>{v.expiresAt?`До ${dateTime(v.expiresAt)}`:'Без срока'}</small>
             {["issued", "reserved"].includes(v.status) && (
               <button className="text-button" onClick={() => setRevoke(v)}>
-                {v.status === "reserved"
+                {v.status === "reserved" || v.reservedVisits > 0
                   ? "Запросить снятие скидки"
                   : "Отозвать"}
               </button>
@@ -583,7 +583,7 @@ export function PartnersPage() {
       {revoke && (
         <Modal
           title={
-            revoke.status === "reserved"
+            revoke.status === "reserved" || revoke.reservedVisits > 0
               ? "Запросить согласие клиента"
               : "Отозвать купон"
           }
@@ -593,7 +593,7 @@ export function PartnersPage() {
             fields={[{ name: "reason", label: "Причина", type: "textarea" }]}
             onSubmit={async (v) => {
               await api(
-                `/work/${t}/vouchers/${revoke.id}/${revoke.status === "reserved" ? "revocation-requests" : "revoke"}`,
+                `/work/${t}/vouchers/${revoke.id}/${revoke.status === "reserved" || revoke.reservedVisits > 0 ? "revocation-requests" : "revoke"}`,
                 "POST",
                 { expectedVersion: revoke.version, reason: v.reason },
               );

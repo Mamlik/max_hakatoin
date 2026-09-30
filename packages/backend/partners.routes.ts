@@ -592,7 +592,7 @@ function voucherRoutes(app: FastifyInstance) {
       `/api/v1/work/:t/vouchers/:id/${reserved ? "revocation-requests" : "revoke"}`,
       {
         roles: own,
-        schema: expected.extend({ reason }).strict(),
+        schema: expected.extend({ reason, bookingId: z.uuid().optional() }).strict(),
         description: reserved
           ? "Запрос клиенту на снятие зарезервированной скидки"
           : "Отзыв свободного купона с причиной",
@@ -606,7 +606,9 @@ function voucherRoutes(app: FastifyInstance) {
           ),
         );
         version(v, b.expectedVersion);
-        if (v.status !== (reserved ? "reserved" : "issued"))
+        const uses = await rows<{booking_id:string}>(db,"SELECT booking_id FROM voucher_uses WHERE voucher_id=$1 AND status='reserved' ORDER BY booking_id",[v.id]);
+        const hasReservation = v.status === 'reserved' || uses.length > 0;
+        if (reserved ? !hasReservation || !['issued','reserved'].includes(v.status) : v.status !== 'issued' || hasReservation)
           fail(
             409,
             "INVALID_STATE_TRANSITION",
@@ -615,7 +617,7 @@ function voucherRoutes(app: FastifyInstance) {
         if (reserved) {
           const booking = required(
             await one<Booking>(db, "SELECT * FROM bookings WHERE id=$1", [
-              v.reserved_booking_id,
+              b.bookingId && (uses.some(use => use.booking_id === b.bookingId) || v.reserved_booking_id === b.bookingId) ? b.bookingId : b.bookingId ? null : v.reserved_booking_id ?? uses[0]?.booking_id,
             ]),
           );
           const req = await one<{ id: string }>(
@@ -707,20 +709,17 @@ function voucherRoutes(app: FastifyInstance) {
             req.voucher_id,
           ]),
         );
-        if (
-          voucher.status !== "reserved" ||
-          voucher.reserved_booking_id !== booking.id ||
-          booking.status !== "confirmed"
-        )
+        const use = await one<{status:string}>(db,'SELECT status FROM voucher_uses WHERE voucher_id=$1 AND booking_id=$2',[voucher.id,booking.id]);
+        if (booking.applied_voucher_id !== voucher.id || booking.status !== 'confirmed' || !['issued','reserved'].includes(voucher.status) || (use?.status !== 'reserved' && voucher.reserved_booking_id !== booking.id))
           fail(
             409,
             "INVALID_STATE_TRANSITION",
             "Запись или резерв уже изменились",
           );
-        await db.query(
-          "UPDATE vouchers SET status='revoked',reserved_booking_id=NULL,version=version+1 WHERE id=$1",
-          [voucher.id],
-        );
+        await db.query("UPDATE voucher_uses SET status='released' WHERE voucher_id=$1 AND booking_id=$2",[voucher.id,booking.id]);
+        if(voucher.reward_type==='free_visits')
+          await db.query("UPDATE vouchers SET revocation_pending=true,remaining_visits=(SELECT count(*) FROM voucher_uses WHERE voucher_id=$1 AND status='reserved'),status=CASE WHEN EXISTS(SELECT 1 FROM voucher_uses WHERE voucher_id=$1 AND status='reserved') THEN 'issued' ELSE 'revoked' END,version=version+1 WHERE id=$1",[voucher.id]);
+        else await db.query("UPDATE vouchers SET status='revoked',reserved_booking_id=NULL,version=version+1 WHERE id=$1",[voucher.id]);
         const updated = (await one<Booking>(
           db,
           "UPDATE bookings SET applied_voucher_id=NULL,discount_minor=0,version=version+1 WHERE id=$1 RETURNING *",

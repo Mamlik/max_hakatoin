@@ -71,6 +71,8 @@ html[data-theme="dark"] .theme-options button.selected{color:#d6cbff}html[data-t
   .work-shell .sidebar>.wordmark,.work-shell .workspace-switch,.work-shell .sidebar-bottom{display:none}
   .work-shell .sidebar nav{display:flex;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;gap:3px;margin:0;padding:3px 8px max(5px,env(safe-area-inset-bottom));scrollbar-width:thin;overscroll-behavior-inline:contain}
   .work-shell .sidebar nav .nav-item{min-width:90px;min-height:57px;flex:0 0 auto;align-items:center;justify-content:center;padding:6px;font-size:11px;font-weight:750}
+  .master-shell .sidebar nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+  .master-shell .sidebar nav .nav-item{min-width:0}
   .work-shell .main-column main{padding-bottom:110px}
   .work-shell footer{padding-bottom:95px}
   .personal-shell .sidebar{top:auto}
@@ -80,4 +82,6 @@ html[data-theme="dark"] .theme-options button.selected{color:#d6cbff}html[data-t
 .salon-avatar-preview{width:92px;height:92px;flex:0 0 92px;display:grid;place-items:center;overflow:hidden;border-radius:22px;background:var(--accent-light);color:var(--purple);font-size:40px;font-weight:800}
 .salon-avatar-preview img{width:100%;height:100%;object-fit:cover}
 .salon-avatar-details{min-width:0}.salon-avatar-details h2{margin-bottom:3px}.salon-avatar-details p{margin:0 0 12px}
+[data-theme="dark"] .timezone-picker strong{color:var(--ink)}
+@media(max-width:640px){.schedule-day{min-width:0}.interval{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;width:100%;min-width:0}.interval select{grid-column:1/-1;width:100%}.interval input[type="time"]{width:100%;min-width:0;padding:9px 4px}.interval .icon-button{width:28px}}
 @media(max-width:640px){.salon-avatar-panel{align-items:flex-start;gap:14px}.salon-avatar-preview{width:68px;height:68px;flex-basis:68px;border-radius:16px;font-size:30px}}

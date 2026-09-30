@@ -390,6 +390,29 @@ export function Modal({
   children: ReactNode;
   onClose: () => void;
 }) {
+  const dialog = useRef<HTMLElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () => Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]') ?? []).filter(el => el.getClientRects().length);
+    (focusable()[0] ?? dialog.current)?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close.current(); }
+      if (event.key === 'Tab') {
+        const items = focusable();
+        const first = items[0], last = items[items.length - 1];
+        if (!first) { event.preventDefault(); dialog.current?.focus(); }
+        else if (!dialog.current?.contains(document.activeElement) || (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+          event.preventDefault(); (event.shiftKey ? last : first)?.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', keydown, true);
+    return () => { document.removeEventListener('keydown', keydown, true); document.body.style.overflow = overflow; if (previous?.isConnected) previous.focus(); };
+  }, []);
   return (
     <div
       className="modal-backdrop"
@@ -398,6 +421,8 @@ export function Modal({
       }}
     >
       <section
+        ref={dialog}
+        tabIndex={-1}
         className="modal"
         role="dialog"
         aria-modal="true"
@@ -422,14 +447,14 @@ export function useAction() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [success, setSuccess] = useState("");
-  const run = async (fn: () => Promise<unknown>, message = "Сохранено") => {
+  const run = async (fn: () => Promise<unknown>, message = "Сохранено", refresh = true) => {
     if (busy) return;
     setBusy(true);
     setError("");
     setSuccess("");
     try {
       await fn();
-      refreshData();
+      if (refresh) refreshData();
       setSuccess(message);
     } catch (e) {
       setError(
@@ -527,19 +552,21 @@ export function CommandButton({
   label,
   danger = false,
   onDone,
+  disabled = false,
 }: {
   path: string;
   body: unknown;
   label: string;
   danger?: boolean;
   onDone?: () => void;
+  disabled?: boolean;
 }) {
   const a = useAction();
   return (
     <div className="command">
       <button
         className={`button ${danger ? "danger" : "secondary"}`}
-        disabled={a.busy}
+        disabled={a.busy || disabled}
         onClick={() =>
           void a.run(async () => {
             await api(path, "POST", body);

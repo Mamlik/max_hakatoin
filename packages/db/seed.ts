@@ -141,7 +141,7 @@ export async function seed() {
           ],
         );
       await db.query(
-        "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required) VALUES($1,$2,5)",
+        "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required,free_visits_count) VALUES($1,$2,5,1)",
         [tenantId, fixtureId(`service-${key}-0`)],
       );
       const weekly: Weekday[] = Array.from({ length: 7 }, (_, i) => ({
@@ -288,7 +288,7 @@ export async function seed() {
         );
       }
       await db.query(
-        "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required) VALUES($1,$2,5)",
+        "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required,free_visits_count) VALUES($1,$2,5,1)",
         [tenantId, fixtureId(`service-${key}-0`)],
       );
       const weekly: Weekday[] = Array.from({ length: 7 }, (_, i) => ({
@@ -329,7 +329,7 @@ export async function seed() {
   });
   for (const key of ["a", "b"])
     await pool.query(
-      "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required) SELECT $1,s.id,5 FROM services s WHERE s.id=$2 AND NOT EXISTS(SELECT 1 FROM loyalty_programs p WHERE p.tenant_id=$1 AND p.service_id=s.id)",
+      "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required,free_visits_count) SELECT $1,s.id,5,1 FROM services s WHERE s.id=$2 AND NOT EXISTS(SELECT 1 FROM loyalty_programs p WHERE p.tenant_id=$1 AND p.service_id=s.id)",
       [fixtureId(`salon-${key}`), fixtureId(`service-${key}-0`)],
     );
   console.log("Demo fixtures ready. Existing salon data was preserved.");

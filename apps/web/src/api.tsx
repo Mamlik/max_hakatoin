@@ -104,24 +104,26 @@ export function useApi<T>(path: string | null, poll = false) {
 
   useEffect(() => {
     let alive = true;
+    let latestRequest = 0;
     const load = async () => {
+      const request = ++latestRequest;
       if (!path) {
         if (alive) setLoading(false);
         return;
       }
       try {
         const result = await api<T>(path);
-        if (alive) {
+        if (alive && request === latestRequest) {
           setData(result);
           setError("");
         }
       } catch (cause) {
-        if (alive) {
+        if (alive && request === latestRequest) {
           setError(cause instanceof Error ? cause.message : "Ошибка");
           setData(undefined);
         }
       } finally {
-        if (alive) setLoading(false);
+        if (alive && request === latestRequest) setLoading(false);
       }
     };
 

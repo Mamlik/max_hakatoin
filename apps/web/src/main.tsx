@@ -217,6 +217,7 @@ function App() {
           ["customers", "user", "Клиенты"],
           ["catalog", "salons", "Услуги и мастера"],
           ["schedule", "calendar", "График"],
+          ["live-window", "calendar", "Живое окно"],
           ["analytics", "chart", "Статистика"],
         ]
       : []),
@@ -231,15 +232,9 @@ function App() {
       : []),
     ...(member?.role !== "master" ? [["audit", "bell", "Журнал"]] : []),
   ].map(([p, i, l]) => [`/work/${tenantId}/${p}`, i, l]);
-  if (member?.role === "master") {
-    work.push(
-      ["/me/salons", "salons", "Мои места"],
-      ["/me/bookings", "calendar", "Мои записи"],
-      ["/me/profile", "user", "Профиль"],
-    );
-  }
+  work.push(...personal.slice(0, 4).map(([to, icon, label]) => [to!, icon!, label === "Записи" ? "Мои записи" : label!]));
   return (
-    <div className={`app-shell ${tenantId ? "work-shell" : "personal-shell"}`}>
+    <div className={`app-shell ${tenantId ? `work-shell ${member?.role}-shell` : "personal-shell"}`}>
       <header className="mobile-appbar">
         <button type="button" className="mobile-back" aria-label="Назад" onClick={() => {
           if (Number(window.history.state?.idx ?? 0) > 0) navigate(-1);
