@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, useApi, useAuth } from "./api";
 import {
@@ -14,7 +14,7 @@ import {
   FilePick,
   TimezonePicker,
 } from "./ui";
-import { StorefrontView } from "./personal";
+import { Asset, StorefrontView } from "./personal";
 import { LinkBox } from "./work";
 import type {
   Salon,
@@ -45,13 +45,30 @@ export function SettingsPage() {
     [storefrontVersion, setStorefrontVersion] = useState<number>(),
     [preview, setPreview] = useState(false);
   const a = useAction();
-  useEffect(() => setStyle(draft.data?.draftStyle), [draft.data?.version]);
+  const avatarAction = useAction();
+  const draftBaseline = useRef<Style | undefined>(undefined);
+  useEffect(() => { draftBaseline.current = undefined; setStyle(undefined); }, [t]);
+  useEffect(() => {
+    const next = draft.data?.draftStyle;
+    if (!next) return;
+    const baseline = draftBaseline.current;
+    draftBaseline.current = next;
+    setStyle((local) => {
+      if (!next || !local || !baseline) return next;
+      // Refreshes (including an avatar change) must preserve unsaved form fields.
+      const changed = Object.keys(local).filter((key) => {
+        const field = key as keyof Style;
+        return JSON.stringify(local[field]) !== JSON.stringify(baseline[field]);
+      });
+      return { ...next, ...Object.fromEntries(changed.map((key) => [key, local[key as keyof Style]])) };
+    });
+  }, [draft.data?.version, t]);
   useEffect(
     () => setStorefrontVersion(profile.data?.version),
     [profile.data?.version],
   );
   const member = auth.me!.memberships.find((m) => m.tenantId === t)!;
-  const upload = async (purpose: "logo" | "cover", file?: File) => {
+  const upload = async (purpose: "cover", file?: File) => {
     if (!file) return;
     const form = new FormData();
     form.append("purpose", purpose);
@@ -62,18 +79,37 @@ export function SettingsPage() {
         s
           ? {
               ...s,
-              [purpose === "logo" ? "logoMediaId" : "coverMediaId"]: media.id,
+              coverMediaId: media.id,
             }
           : s,
       );
     }, "Изображение загружено. Сохраните черновик оформления.");
   };
+  const replaceAvatar = async (file?: File) => {
+    if (!file) return;
+    const form = new FormData();
+    form.append("purpose", "logo");
+    form.append("file", file);
+    await avatarAction.run(async () => {
+      const media = await api<Media>(`/work/${t}/media`, "POST", form);
+      const current = await api<Salon>(`/work/${t}/profile`);
+      const updated = await api<Salon>(`/work/${t}/storefront/avatar`, "POST", {
+        expectedVersion: current.version,
+        mediaId: media.id,
+      });
+      setStyle((previous) => previous ? { ...previous, logoMediaId: media.id } : previous);
+      setStorefrontVersion(updated.version);
+    }, profile.data?.status === "published"
+      ? "Аватар салона обновлён и виден клиентам"
+      : "Аватар салона обновлён. Он появится на витрине после публикации салона.");
+  };
   return (
     <>
       <PageTitle
         title="Настройки салона"
-        description="Профиль, оформление и публикация. Черновик не меняет витрину до нажатия «Опубликовать»."
+        description="Профиль, оформление и публикация. Оформление витрины публикуется из черновика, аватар обновляется сразу."
       />
+      <div className="profile-links"><Link to={`/work/${t}/live-window`}>Настройки и цепочки «Живого окна» →</Link></div>
       <Load {...profile}>
         {profile.data &&
           (() => {
@@ -137,11 +173,33 @@ export function SettingsPage() {
                     </Link>
                   </div>
                 </section>
+                <section className="panel salon-avatar-panel">
+                  <div className="salon-avatar-preview">
+                    <Asset
+                      tenantId={salon.id}
+                      media={draft.data?.media?.find((media) => media.id === salon.publishedStyle?.logoMediaId)}
+                      alt="Аватар салона"
+                    />
+                    {!salon.publishedStyle?.logoMediaId && salon.name.charAt(0)}
+                  </div>
+                  <div className="salon-avatar-details">
+                    <h2>Аватар салона</h2>
+                    <p>Логотип на витрине и в карточке салона. Выбранное фото сохраняется сразу. JPEG, PNG или WebP до 5 МБ.</p>
+                    <FilePick
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={avatarAction.busy || a.busy}
+                      onPick={(file) => void replaceAvatar(file)}
+                      label={salon.publishedStyle?.logoMediaId ? "Заменить аватар" : "Добавить аватар"}
+                    />
+                    {avatarAction.feedback}
+                  </div>
+                </section>
                 <div className="two-columns">
                   <section className="panel">
                     <h2>Профиль</h2>
                     <SimpleForm
-                      key={salon.version}
+                      key={salon.id}
+                      submitDisabled={avatarAction.busy || a.busy}
                       fields={[
                         { name: "name", label: "Название" },
                         { name: "category", label: "Направление" },
@@ -238,6 +296,7 @@ export function SettingsPage() {
                       Один шаблон · адаптивный
                     </span>
                   </div>
+                  {draft.error && <div className="notice error" role="alert">{draft.error}<button className="text-button" onClick={draft.reload}>Повторить загрузку оформления</button></div>}
                   {style && (
                     <>
                       <div className="two-columns">
@@ -326,26 +385,12 @@ export function SettingsPage() {
                         </div>
                         <div>
                           <Field
-                            label="Логотип"
-                            hint="JPEG, PNG или WebP до 5 МБ. Сервер удалит метаданные и сохранит WebP."
-                          >
-                            <FilePick
-                              accept="image/jpeg,image/png,image/webp"
-                              disabled={a.busy}
-                              onPick={(f) => void upload("logo", f)}
-                              label="Выбрать логотип"
-                            />
-                          </Field>
-                          {style.logoMediaId && (
-                            <p className="small success-text">Логотип выбран</p>
-                          )}
-                          <Field
                             label="Обложка"
                             hint="Рекомендуемое соотношение 16:9; обрезка по центру."
                           >
                             <FilePick
                               accept="image/jpeg,image/png,image/webp"
-                              disabled={a.busy}
+                              disabled={a.busy || avatarAction.busy}
                               onPick={(f) => void upload("cover", f)}
                               label="Выбрать обложку"
                             />
@@ -360,7 +405,7 @@ export function SettingsPage() {
                       <div className="inline-actions">
                         <button
                           className="button primary"
-                          disabled={a.busy}
+                          disabled={a.busy || avatarAction.busy}
                           onClick={() =>
                             void a.run(
                               async () => {
@@ -389,6 +434,7 @@ export function SettingsPage() {
                         </button>
                         <CommandButton
                           path={`/work/${t}/storefront/publish`}
+                          disabled={avatarAction.busy || a.busy}
                           body={{
                             expectedVersion: storefrontVersion ?? salon.version,
                           }}

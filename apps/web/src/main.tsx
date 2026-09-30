@@ -38,8 +38,16 @@ import {
 } from "./work";
 import { PartnersPage } from "./partners";
 import { LoyaltyPage, LoyaltySettingsPage } from "./loyalty";
+import { PromotionsWorkPage } from './promotions-ui';
 import { LiveWindowOfferPage, LiveWindowWorkPage, WaitlistForm, WaitlistPage } from "./live-window-ui";
 import "./style.css";
+import "./design-system.css";
+
+try {
+  document.documentElement.dataset.theme = localStorage.getItem("ryadom-theme") === "dark" ? "dark" : "light";
+} catch {
+  document.documentElement.dataset.theme = "light";
+}
 
 function App() {
   const auth = useAuth();
@@ -194,13 +202,13 @@ function App() {
       </div>
     );
   const personal = [
-    ["/me/bookings", "calendar", "Мои записи"],
-    ["/me/salons", "salons", "Салоны"],
-    ["/me/loyalty", "gift", "Лояльность"],
+    ["/me/salons", "salons", "Мои места"],
+    ["/me/bookings", "calendar", "Записи"],
+    ["/me/loyalty", "gift", "Бонусы"],
+    ["/me/profile", "user", "Профиль"],
     ["/me/offers", "gift", "Предложения"],
     ["/me/events", "bell", "События"],
     ["/me/waitlist", "calendar", "Живое окно"],
-    ["/me/profile", "user", "Профиль"],
   ];
   const work = [
     ["calendar", "calendar", "Календарь"],
@@ -209,24 +217,47 @@ function App() {
           ["customers", "user", "Клиенты"],
           ["catalog", "salons", "Услуги и мастера"],
           ["schedule", "calendar", "График"],
-          ["analytics", "chart", "Статистика"],
           ["live-window", "calendar", "Живое окно"],
+          ["analytics", "chart", "Статистика"],
         ]
       : []),
     ...(member?.role === "owner"
       ? [
           ["loyalty", "gift", "Лояльность"],
           ["partners", "gift", "Партнёрства"],
+          ["promotions", "gift", "Акции"],
           ["settings", "settings", "Настройки"],
           ["staff-access", "user", "Доступ"],
         ]
       : []),
     ...(member?.role !== "master" ? [["audit", "bell", "Журнал"]] : []),
   ].map(([p, i, l]) => [`/work/${tenantId}/${p}`, i, l]);
+  work.push(...personal.slice(0, 4).map(([to, icon, label]) => [to!, icon!, label === "Записи" ? "Мои записи" : label!]));
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${tenantId ? `work-shell ${member?.role}-shell` : "personal-shell"}`}>
+      <header className="mobile-appbar">
+        <button type="button" className="mobile-back" aria-label="Назад" onClick={() => {
+          if (Number(window.history.state?.idx ?? 0) > 0) navigate(-1);
+          else navigate("/me/salons");
+        }}><Icon name="arrow" /></button>
+        <Link to="/me/salons" className="mobile-wordmark" aria-label="Рядом — мои места">ря<span>дом</span></Link>
+        <select
+          className="mobile-workspace-select"
+          aria-label="Выбрать кабинет"
+          value={tenantId ?? "personal"}
+          onChange={(event) => {
+            if (event.target.value === "change-role") { auth.logout(); return; }
+            navigate(event.target.value === "personal" ? "/me/salons" : `/work/${event.target.value}/calendar`);
+          }}
+        >
+          <option value="personal">Личный</option>
+          {auth.me.memberships.map((membership) => <option key={membership.id} value={membership.tenantId}>{membership.tenantName} · {labels[membership.role]}</option>)}
+          {auth.demo && <option value="change-role">Сменить роль…</option>}
+        </select>
+        {auth.demo && <button type="button" className="mobile-role-switch" aria-label="Сменить роль" title="Сменить роль" onClick={auth.logout}><Icon name="logout" /></button>}
+      </header>
       <aside className="sidebar">
-        <Link to="/me/bookings" className="wordmark">
+        <Link to="/me/salons" className="wordmark">
           <span className="brand-mark">р.</span>рядом
         </Link>
         <div className="workspace-switch">
@@ -237,7 +268,7 @@ function App() {
             onChange={(e) =>
               navigate(
                 e.target.value === "personal"
-                  ? "/me/bookings"
+                  ? "/me/salons"
                   : `/work/${e.target.value}/calendar`,
               )
             }
@@ -298,15 +329,11 @@ function App() {
         <header className="topbar">
           <span>
             {tenantId
-              ? (member?.tenantName ?? "Рабочий кабинет")
-              : "Личное пространство"}
+              ? `${member?.tenantName ?? "Салон"} / ${labels[member?.role ?? "owner"]}`
+              : "Для вас"}
           </span>
           <div>
-            {auth.demo && <span className="demo-tag">ДЕМО</span>}
-            <span className="max-connected">
-              <i />
-              MAX
-            </span>
+            <span className="topbar-date">{new Date().toLocaleDateString("ru-RU", {day:"numeric",month:"long",year:"numeric"})}</span>
             <Link to="/me/events" className="icon-button" aria-label="События">
               <Icon name="bell" />
             </Link>
@@ -314,7 +341,7 @@ function App() {
         </header>
         <main key={`${auth.me.user.id}:${tenantId ?? "personal"}`}>
           <Routes>
-            <Route path="/" element={<Navigate to="/me/bookings" replace />} />
+            <Route path="/" element={<Navigate to="/me/salons" replace />} />
             <Route path="/me/bookings" element={<BookingsPage />} />
             <Route path="/me/salons" element={<DiscoverPage />} />
             <Route path="/s/:code" element={<SalonPage />} />
@@ -356,13 +383,14 @@ function App() {
             <Route path="/work/:t/settings" element={<SettingsPage />} />
             <Route path="/work/:t/staff-access" element={<AccessPage />} />
             <Route path="/work/:t/partners" element={<PartnersPage />} />
+            <Route path="/work/:t/promotions" element={<PromotionsWorkPage />} />
             <Route path="/work/:t/audit" element={<AuditPage />} />
             <Route
               path="*"
               element={
                 <div className="empty">
                   <h2>Страница не найдена</h2>
-                  <Link to="/me/bookings">В личный кабинет</Link>
+                  <Link to="/me/salons">В личный кабинет</Link>
                 </div>
               }
             />

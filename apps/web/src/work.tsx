@@ -1,5 +1,6 @@
 import { CustomerLoyalty } from "./loyalty";
 import { useEffect, useState } from "react";
+import { DateTime } from "luxon";
 import { Link, useParams } from "react-router-dom";
 import { api, useApi, useAuth } from "./api";
 import {
@@ -109,28 +110,46 @@ export function WorkCalendar() {
   const { t } = useParams(),
     auth = useAuth();
   const role = auth.me!.memberships.find((m) => m.tenantId === t)?.role;
-  const [date, setDate] = useState(dayISO()),
-    [range, setRange] = useState("day"),
-    [staff, setStaff] = useState("");
-  const end = new Date(`${date}T12:00:00`);
-  end.setDate(end.getDate() + (range === "week" ? 7 : 1));
-  const to = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
-  const data = useApi<Items<Booking>>(
-    `/work/${t}/calendar?from=${date}T00:00:00%2B03:00&to=${to}T00:00:00%2B03:00&staffId=${staff}`,
+  const [selected, setSelected] = useState(dayISO());
+  const [month, setMonth] = useState(dayISO().slice(0, 7));
+  const [staff, setStaff] = useState("");
+  const [staffQuery, setStaffQuery] = useState("");
+  const [staffOpen, setStaffOpen] = useState(false);
+  const [zone, setZone] = useState("Europe/Moscow");
+  const start = DateTime.fromISO(`${month}-01`, { zone }).startOf("month");
+  const end = start.plus({ months: 1 });
+  const data = useApi<Items<Booking> & { timezone: string }>(
+    `/work/${t}/calendar?from=${encodeURIComponent(start.toISO()!)}&to=${encodeURIComponent(end.toISO()!)}&staffId=${staff}`,
     true,
   );
+  useEffect(() => { if (data.data?.timezone && data.data.timezone !== zone) setZone(data.data.timezone); }, [data.data?.timezone, zone]);
   const workers = useApi<Items<Staff>>(
     role !== "master" ? `/work/${t}/staff` : null,
   );
-  const stats = data.data?.items;
+  const windows = useApi<Items<{id:string;status:string;startAt:string;staffId:string;serviceName:string;staffName:string;sourceBookingId:string}>>(role !== "master" ? `/work/${t}/live-window/windows` : null);
+  const bookings = data.data?.items.filter((booking) => booking.status !== "cancelled" && DateTime.fromISO(booking.startAt).setZone(zone).toFormat("yyyy-MM") === month) ?? [];
+  const byDay = new Map<string, Booking[]>();
+  for (const booking of bookings) {
+    const key = DateTime.fromISO(booking.startAt).setZone(zone).toISODate()!;
+    byDay.set(key, [...(byDay.get(key) ?? []), booking]);
+  }
+  const dayBookings = byDay.get(selected) ?? [];
+  const dayWindows = windows.data?.items.filter((window) => DateTime.fromISO(window.startAt).setZone(zone).toISODate() === selected && (!staff || window.staffId === staff) && ["detected","matching","offering"].includes(window.status)) ?? [];
+  const days = start.daysInMonth ?? 30;
+  const offset = (start.weekday + 6) % 7;
+  const chosenStaff = workers.data?.items.find((worker) => worker.id === staff);
+  const matches = workers.data?.items.filter((worker) => worker.name.toLocaleLowerCase("ru-RU").includes(staffQuery.trim().toLocaleLowerCase("ru-RU"))) ?? [];
+  const changeMonth = (delta: number) => {
+    const next = start.plus({ months: delta });
+    setMonth(next.toFormat("yyyy-MM"));
+    setSelected(next.toISODate()!);
+  };
   return (
     <>
       <PageTitle
-        eyebrow={
-          role === "master" ? "ТОЛЬКО ВАШИ НАЗНАЧЕНИЯ" : "РАБОЧЕЕ ПРОСТРАНСТВО"
-        }
-        title="Календарь салона"
-        description="Планируйте день и отмечайте результаты визитов."
+        eyebrow={role === "master" ? "ТОЛЬКО ВАШИ НАЗНАЧЕНИЯ" : "РАБОЧЕЕ ПРОСТРАНСТВО"}
+        title={role === "master" ? "Мой календарь" : "Записи салона"}
+        description="Выберите месяц и день, чтобы открыть записи по времени."
         action={
           role !== "master" && (
             <Link className="button primary" to={`/work/${t}/bookings/new`}>
@@ -141,82 +160,29 @@ export function WorkCalendar() {
         }
       />
       {role === "master" && <MasterPhotoCard tenantId={t!} />}
-      <div className="stats-grid compact-stats">
-        {[
-          ["Всего визитов", stats?.length ?? "—"],
-          [
-            "Ожидаются",
-            stats?.filter((b) => b.status === "confirmed").length ?? "—",
-          ],
-          [
-            "Завершены",
-            stats?.filter((b) => b.status === "completed").length ?? "—",
-          ],
-        ].map(([name, value]) => (
-          <div className="stat-card" key={name}>
-            <span>{name}</span>
-            <strong>{value}</strong>
+      {role !== "master" && <div className="staff-filter">
+        <span className="eyebrow">МАСТЕР</span>
+        <button type="button" className="staff-filter-trigger" aria-expanded={staffOpen} onClick={() => setStaffOpen(!staffOpen)}>{chosenStaff?.name ?? "Все мастера"}<span aria-hidden="true">⌄</span></button>
+        {staffOpen && <div className="staff-filter-menu"><input autoFocus type="search" aria-label="Поиск мастера" placeholder="Найти мастера" value={staffQuery} onChange={(event) => setStaffQuery(event.target.value)} />
+          <button type="button" onClick={() => {setStaff("");setStaffOpen(false);}}>Все мастера</button>
+          {matches.map((worker) => <button type="button" key={worker.id} onClick={() => {setStaff(worker.id);setStaffOpen(false);}}>{worker.name}</button>)}
+          {!matches.length && <p className="muted">Мастер не найден</p>}
+        </div>}
+      </div>}
+      <Load {...data}><div className="month-layout">
+        <section className="month-calendar panel" aria-label="Календарь записей">
+          <div className="month-heading"><button type="button" aria-label="Предыдущий месяц" onClick={() => changeMonth(-1)}>‹</button><div><h2>{start.setLocale("ru").toFormat("LLLL yyyy")}</h2><span>{plural(bookings.length, "запись", "записи", "записей")} за месяц</span></div><button type="button" aria-label="Следующий месяц" onClick={() => changeMonth(1)}>›</button></div>
+          <div className="month-weekdays">{["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((name) => <span key={name}>{name}</span>)}</div>
+          <div className="month-days">{Array.from({ length: offset }, (_, index) => <span key={`empty-${index}`} />)}
+            {Array.from({ length: days }, (_, index) => { const day = start.plus({ days: index }); const key = day.toISODate()!; const count = byDay.get(key)?.length ?? 0; return <button type="button" key={key} className={selected === key ? "selected" : ""} aria-pressed={selected === key} aria-label={`${day.setLocale("ru").toFormat("d LLLL")}: ${plural(count, "запись", "записи", "записей")}`} onClick={() => setSelected(key)}><span>{index + 1}</span>{count > 0 && <small>{count}</small>}</button>; })}
           </div>
-        ))}
-      </div>
-      <div className="filters">
-        <input
-          aria-label="Дата календаря"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        <div className="tabs">
-          <button
-            className={range === "day" ? "selected" : ""}
-            onClick={() => setRange("day")}
-          >
-            День
-          </button>
-          <button
-            className={range === "week" ? "selected" : ""}
-            onClick={() => setRange("week")}
-          >
-            Неделя
-          </button>
-        </div>
-        {role !== "master" && (
-          <select
-            aria-label="Фильтр мастера"
-            value={staff}
-            onChange={(e) => setStaff(e.target.value)}
-          >
-            <option value="">Все мастера</option>
-            {workers.data?.items.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-      <Load {...data}>
-        {data.data?.items.length ? (
-          <div className="booking-grid">
-            {data.data.items.map((b) => (
-              <BookingCard key={b.id} booking={b} work />
-            ))}
-          </div>
-        ) : (
-          <Empty
-            title="На этот период записей нет"
-            text={
-              role === "master"
-                ? "Выберите другую дату — здесь показаны только ваши назначения."
-                : "Выберите другую дату или создайте запись клиента."
-            }
-          />
-        )}
-      </Load>
-      <div className="notice">
-        Завершение и неявка доступны после начала визита. Для демонстрационных
-        визитов выберите вчерашний день.
-      </div>
+        </section>
+        <section className="month-agenda"><div className="section-head"><h2>{DateTime.fromISO(selected).setLocale("ru").toFormat("d LLLL")}</h2><span className="muted">{plural(dayBookings.length, "запись", "записи", "записей")}</span></div>
+          {dayBookings.length ? <div className="agenda-list">{dayBookings.map((booking) => <BookingCard key={booking.id} booking={booking} work />)}</div>
+            : <Empty title="На этот день записей нет" text="Выберите другой день или месяц." />}
+          {role !== "master" && dayWindows.length > 0 && <div className="open-windows"><h3>Освободившееся время</h3><p>Это не подтверждённые записи.</p>{dayWindows.map((window) => <Link key={window.id} className="booking-card" to={`/work/${t}/live-window?sourceBookingId=${window.sourceBookingId}`}><div><strong>{DateTime.fromISO(window.startAt).setZone(zone).toFormat("HH:mm")} · {window.serviceName}</strong><p>{window.staffName} · цепочка предложений</p></div><Icon name="arrow" /></Link>)}</div>}
+        </section>
+      </div></Load>
     </>
   );
 }
@@ -795,6 +761,7 @@ export function CatalogPage() {
           {modal === "service" ? (
             <SimpleForm
               fields={fields}
+              submitDisabled={action.busy}
               initial={
                 selectedService
                   ? {
@@ -863,6 +830,7 @@ export function CatalogPage() {
             </SimpleForm>
           ) : modal === "staff" ? (
             <SimpleForm
+              submitDisabled={action.busy}
               fields={[
                 { name: "name", label: "Имя мастера" },
                 {

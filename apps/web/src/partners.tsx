@@ -24,6 +24,7 @@ import type {
   Catalog,
   Voucher,
 } from "./types";
+const rewardLabel=(v:{rewardType?:string;discountMinor:number|null;discountPercent?:number|null;freeVisitsCount?:number|null})=>v.rewardType==='percent'?`${v.discountPercent}%`:v.rewardType==='free_visits'?`${v.freeVisitsCount} бесплатн. посещ.`:money(v.discountMinor);
 
 function CampaignForm({
   tenant,
@@ -66,11 +67,12 @@ function CampaignForm({
       edit?.targetServiceIds ?? campaign?.versions[0]?.targetServiceIds ?? [],
     );
   const base = edit ?? campaign?.versions[0];
+  const [rewardType,setRewardType]=useState<'fixed'|'percent'|'free_visits'>(base?.rewardType??'fixed');
   return (
     <>
       <div className="notice">
         Источник A выдаёт купон после завершённого визита. Принимающий B
-        предоставляет фиксированную скидку. Оба владельца согласуют одну и ту же
+        предоставляет согласованную награду. Оба владельца согласуют одну и ту же
         версию.
       </div>
       {!campaign && (
@@ -157,29 +159,33 @@ function CampaignForm({
           <SimpleForm
             fields={[
               {
-                name: "discount",
-                label: "Фиксированная скидка, ₽",
+                name: "rewardAmount",
+                label: rewardType==='fixed'?"Скидка, ₽":rewardType==='percent'?"Скидка, %":"Бесплатных посещений",
                 type: "number",
               },
               {
                 name: "issueFrom",
                 label: "Начало выдачи (московское время)",
                 type: "datetime-local",
+                required:false,
               },
               {
                 name: "issueUntil",
                 label: "Окончание выдачи (московское время)",
                 type: "datetime-local",
+                required:false,
               },
               {
                 name: "voucherValidDays",
                 label: "Срок купона, суток по 24 часа",
                 type: "number",
+                required:false,
               },
               {
                 name: "issueLimit",
                 label: "Общий лимит выдачи за всю кампанию",
                 type: "number",
+                required:false,
               },
               {
                 name: "termsText",
@@ -188,12 +194,10 @@ function CampaignForm({
               },
             ]}
             initial={{
-              discount: base ? base.discountMinor / 100 : 300,
-              issueFrom: base
-                ? toMoscowInput(base.issueFrom)
-                : `${dayISO()}T00:00`,
+              rewardAmount:base?rewardType==='fixed'?(base.discountMinor??0)/100:rewardType==='percent'?base.discountPercent??10:base.freeVisitsCount??1:300,
+              issueFrom: base?.issueFrom?toMoscowInput(base.issueFrom):'',
               issueUntil: base
-                ? toMoscowInput(base.issueUntil)
+                && base.issueUntil ? toMoscowInput(base.issueUntil)
                 : `${dayISO(30)}T23:59`,
               voucherValidDays: base?.voucherValidDays ?? 14,
               issueLimit: base?.issueLimit ?? 100,
@@ -202,15 +206,19 @@ function CampaignForm({
                 "Персональная скидка на выбранные услуги. Один купон на визит.",
             }}
             submit={edit ? "Сохранить черновик" : "Создать черновик версии"}
+            children={<Field label="Тип награды"><select name="rewardType" value={rewardType} onChange={e=>setRewardType(e.target.value as typeof rewardType)}><option value="fixed">Скидка в рублях</option><option value="percent">Процент</option><option value="free_visits">Бесплатные посещения</option></select></Field>}
             onSubmit={async (v) => {
               const terms = {
                 sourceServiceIds: sourceIds,
                 targetServiceIds: targetIds,
-                discountMinor: Math.round(Number(v.discount) * 100),
-                issueFrom: new Date(`${v.issueFrom}:00+03:00`).toISOString(),
-                issueUntil: new Date(`${v.issueUntil}:00+03:00`).toISOString(),
-                voucherValidDays: Number(v.voucherValidDays),
-                issueLimit: Number(v.issueLimit),
+                rewardType,
+                discountMinor:rewardType==='fixed'?Math.round(Number(v.rewardAmount)*100):null,
+                discountPercent:rewardType==='percent'?Number(v.rewardAmount):null,
+                freeVisitsCount:rewardType==='free_visits'?Number(v.rewardAmount):null,
+                issueFrom: v.issueFrom?new Date(`${v.issueFrom}:00+03:00`).toISOString():null,
+                issueUntil: v.issueUntil?new Date(`${v.issueUntil}:00+03:00`).toISOString():null,
+                voucherValidDays:v.voucherValidDays?Number(v.voucherValidDays):null,
+                issueLimit:v.issueLimit?Number(v.issueLimit):null,
                 termsText: v.termsText,
               };
               await api(
@@ -352,7 +360,7 @@ export function PartnersPage() {
                     <div className="version-card" key={v.id}>
                       <div className="section-head">
                         <h3>
-                          Версия {v.number} · скидка {money(v.discountMinor)}
+                          Версия {v.number} · награда {rewardLabel(v)}
                         </h3>
                         <Badge status={v.status} />
                       </div>
@@ -360,7 +368,7 @@ export function PartnersPage() {
                       <dl>
                         <dt>Период выдачи</dt>
                         <dd>
-                          {dateTime(v.issueFrom)} — {dateTime(v.issueUntil)}
+                          {v.issueFrom?dateTime(v.issueFrom):'с публикации'} — {v.issueUntil?dateTime(v.issueUntil):'без срока'}
                         </dd>
                         <dt>Срок купона</dt>
                         <dd>{v.voucherValidDays} суток</dd>
@@ -498,12 +506,12 @@ export function PartnersPage() {
         <h2>Купоны и обязательства</h2>
         {vouchers.data?.items.map((v) => (
           <div className="history-row" key={v.id}>
-            <strong>{money(v.discountMinor)}</strong>
+            <strong>{rewardLabel(v)}</strong>
             <Badge status={v.status} />
-            <small>До {dateTime(v.expiresAt)}</small>
+            <small>{v.expiresAt?`До ${dateTime(v.expiresAt)}`:'Без срока'}</small>
             {["issued", "reserved"].includes(v.status) && (
               <button className="text-button" onClick={() => setRevoke(v)}>
-                {v.status === "reserved"
+                {v.status === "reserved" || v.reservedVisits > 0
                   ? "Запросить снятие скидки"
                   : "Отозвать"}
               </button>
@@ -575,7 +583,7 @@ export function PartnersPage() {
       {revoke && (
         <Modal
           title={
-            revoke.status === "reserved"
+            revoke.status === "reserved" || revoke.reservedVisits > 0
               ? "Запросить согласие клиента"
               : "Отозвать купон"
           }
@@ -585,7 +593,7 @@ export function PartnersPage() {
             fields={[{ name: "reason", label: "Причина", type: "textarea" }]}
             onSubmit={async (v) => {
               await api(
-                `/work/${t}/vouchers/${revoke.id}/${revoke.status === "reserved" ? "revocation-requests" : "revoke"}`,
+                `/work/${t}/vouchers/${revoke.id}/${revoke.status === "reserved" || revoke.reservedVisits > 0 ? "revocation-requests" : "revoke"}`,
                 "POST",
                 { expectedVersion: revoke.version, reason: v.reason },
               );
@@ -627,11 +635,11 @@ export function PartnersPage() {
               </h3>
               <p>{v.termsText}</p>
               <p>
-                Скидка {money(v.discountMinor)} · лимит {v.issueLimit} · срок{" "}
-                {v.voucherValidDays} суток
+                Награда {rewardLabel(v)} · лимит {v.issueLimit??'без лимита'} · срок{' '}
+                {v.voucherValidDays?`${v.voucherValidDays} суток`:'без срока'}
               </p>
               <p>
-                Выдача: {dateTime(v.issueFrom)} — {dateTime(v.issueUntil)}
+                Выдача: {v.issueFrom?dateTime(v.issueFrom):'с публикации'} — {v.issueUntil?dateTime(v.issueUntil):'без срока'}
               </p>
               <p>Согласовано сторонами: {v.acceptances.length}/2</p>
             </div>

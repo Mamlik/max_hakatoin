@@ -141,7 +141,7 @@
       "method": "GET",
       "path": "/api/v1/public/salons",
       "role": "public",
-      "description": "Поиск опубликованных салонов по названию или коду",
+      "description": "Поиск опубликованных салонов по названию, коду, категории и активным услугам с постраничной выдачей",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
     },
@@ -891,6 +891,22 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/me/campaigns",
+      "role": "user",
+      "description": "Активные партнёрские программы и согласие на версию",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/me/campaigns/:id/consent",
+      "role": "user",
+      "description": "Согласие клиента на действующую версию партнёрских условий",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/me/vouchers",
       "role": "user",
       "description": "Личные купоны всех статусов",
@@ -1024,6 +1040,126 @@
       "description": "Настроить количество платных посещений для бесплатного визита той же услуги",
       "requestSchema": "См. docs/openapi.json",
       "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/loyalty-programs",
+      "role": "owner",
+      "description": "Создать отдельную программу лояльности",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/work/:t/loyalty-programs/:id",
+      "role": "owner",
+      "description": "Изменить программу до первого начисления",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/loyalty-programs/:id/pause",
+      "role": "owner",
+      "description": "pause программу",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/loyalty-programs/:id/resume",
+      "role": "owner",
+      "description": "resume программу",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/loyalty-programs/:id/end",
+      "role": "owner",
+      "description": "end программу",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/promotions",
+      "role": "user",
+      "description": "Доступные временные акции",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/promotions",
+      "role": "owner,admin",
+      "description": "Акции салона",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/work/:t/promotions/:id",
+      "role": "owner,admin",
+      "description": "Версии и паузы акции",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/promotions",
+      "role": "owner",
+      "description": "Опубликовать свою акцию или предложить партнёру",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/promotions/:id/versions",
+      "role": "owner",
+      "description": "Предложить новую версию акции",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/promotions/:id/accept",
+      "role": "owner",
+      "description": "accept акцию",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/promotions/:id/reject",
+      "role": "owner",
+      "description": "reject акцию",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/promotions/:id/pause",
+      "role": "owner",
+      "description": "pause акцию",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/promotions/:id/resume",
+      "role": "owner",
+      "description": "resume акцию",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/work/:t/promotions/:id/end",
+      "role": "owner",
+      "description": "end акцию",
+      "requestSchema": "См. docs/openapi.json",
+      "expectedStatus": 201
     },
     {
       "method": "GET",

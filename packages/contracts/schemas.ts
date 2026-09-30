@@ -83,6 +83,7 @@ export const quote = z
     startAt: instant,
     voucherId: id.nullable().optional(),
     loyaltyRewardId: id.nullable().optional(),
+    promotionVersionId: id.nullable().optional(),
     customerId: id.optional(),
     expectedVersion: z.number().int().positive().optional(),
     removeVoucher: z.boolean().optional(),
@@ -170,11 +171,19 @@ export const campaignTerms = z
   .object({
     sourceServiceIds: z.array(id).min(1).max(100),
     targetServiceIds: z.array(id).min(1).max(100),
-    discountMinor: z.number().int().positive().max(100000000),
-    issueFrom: instant,
-    issueUntil: instant,
-    voucherValidDays: z.number().int().min(1).max(365),
-    issueLimit: z.number().int().min(1).max(1000000),
+    rewardType: z.enum(['fixed','percent','free_visits']).default('fixed'),
+    discountMinor: z.number().int().positive().max(100000000).nullable(),
+    discountPercent: z.number().int().min(1).max(100).nullable().default(null),
+    freeVisitsCount: z.number().int().min(1).max(50).nullable().default(null),
+    issueFrom: instant.nullable(),
+    issueUntil: instant.nullable(),
+    voucherValidDays: z.number().int().min(1).max(365).nullable(),
+    issueLimit: z.number().int().min(1).max(1000000).nullable(),
     termsText: z.string().trim().min(3).max(3000),
   })
-  .strict();
+  .strict().superRefine((v,ctx)=>{
+    if(v.rewardType==='fixed' && v.discountMinor===null || v.rewardType!=='fixed' && v.discountMinor!==null ||
+      v.rewardType==='percent' && v.discountPercent===null || v.rewardType!=='percent' && v.discountPercent!==null ||
+      v.rewardType==='free_visits' && v.freeVisitsCount===null || v.rewardType!=='free_visits' && v.freeVisitsCount!==null)
+      ctx.addIssue({code:'custom',message:'Нужен только номинал выбранной награды'});
+  });

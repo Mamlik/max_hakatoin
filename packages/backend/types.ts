@@ -91,6 +91,7 @@ export interface Booking {
   applied_voucher_id: string | null;
   previous_voucher_id: string | null;
   loyalty_reward_id: string | null;
+  promotion_version_id: string | null;
   timezone_snapshot: string;
   customer_name?: string;
   staff_name?: string;
@@ -113,6 +114,7 @@ export interface VisitReview {
   invalidated_at: Date | null;
 }
 export interface Voucher {
+  revocation_pending: boolean;
   id: string;
   campaign_id: string;
   version_id: string;
@@ -121,11 +123,15 @@ export interface Voucher {
   source_tenant_id: string;
   target_tenant_id: string;
   status: string;
-  discount_minor: number;
+  discount_minor: number | null;
+  reward_type: 'fixed' | 'percent' | 'free_visits';
+  discount_percent: number | null;
+  free_visits_count: number | null;
+  remaining_visits: number | null;
   target_service_ids: string[];
   terms_snapshot: Record<string, unknown>;
   issued_at: Date;
-  expires_at: Date;
+  expires_at: Date | null;
   reserved_booking_id: string | null;
   redeemed_booking_id: string | null;
   version: number;
@@ -147,11 +153,14 @@ export interface CampaignVersion {
   status: string;
   source_service_ids: string[];
   target_service_ids: string[];
-  discount_minor: number;
-  issue_from: Date;
-  issue_until: Date;
-  voucher_valid_days: number;
-  issue_limit: number;
+  discount_minor: number | null;
+  reward_type: 'fixed' | 'percent' | 'free_visits';
+  discount_percent: number | null;
+  free_visits_count: number | null;
+  issue_from: Date | null;
+  issue_until: Date | null;
+  voucher_valid_days: number | null;
+  issue_limit: number | null;
   terms_text: string;
   terms_hash: string;
   proposed_by_tenant_id: string | null;
@@ -180,6 +189,7 @@ export interface QuoteIntent {
   discountMinor: number;
   voucherId: string | null;
   loyaltyRewardId?: string | null;
+  promotionVersionId?: string | null;
   serviceName: string;
   bookingId?: string;
   expectedVersion?: number;

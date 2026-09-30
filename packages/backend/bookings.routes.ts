@@ -59,6 +59,7 @@ export function bookingDTO(b: Booking, member?: Membership) {
       serviceNameSnapshot: b.service_name_snapshot,
       startAt: b.start_at,
       endAt: b.end_at,
+      timezoneSnapshot: b.timezone_snapshot,
       status: b.status,
       version: b.version,
       allowedActions,
@@ -129,7 +130,7 @@ export function bookingRoutes(app: FastifyInstance) {
       const { limit, offset } = page(q);
       const result = await rows<Booking>(
         db,
-        `${bookingSelect} WHERE b.user_id=$1 AND ($2::uuid IS NULL OR b.tenant_id=$2) AND ($3::text IS NULL OR ($3='upcoming' AND b.status='confirmed' AND b.end_at>now()) OR ($3='history' AND (b.status<>'confirmed' OR b.end_at<=now()))) AND ($4::timestamptz IS NULL OR b.start_at>=$4) AND ($5::timestamptz IS NULL OR b.start_at<$5) ORDER BY b.start_at,b.id LIMIT $6 OFFSET $7`,
+        `${bookingSelect} WHERE b.user_id=$1 AND ($2::uuid IS NULL OR b.tenant_id=$2) AND ($3::text IS NULL OR ($3='upcoming' AND b.status='confirmed' AND b.end_at>now()) OR ($3='history' AND (b.status<>'confirmed' OR b.end_at<=now()))) AND ($4::timestamptz IS NULL OR b.start_at>=$4) AND ($5::timestamptz IS NULL OR b.start_at<$5) AND ($8::date IS NULL OR (b.start_at AT TIME ZONE b.timezone_snapshot)::date=$8) ORDER BY b.start_at,b.id LIMIT $6 OFFSET $7`,
         [
           actor.id,
           q.tenantId || null,
@@ -138,6 +139,7 @@ export function bookingRoutes(app: FastifyInstance) {
           q.to || null,
           limit + 1,
           offset,
+          q.day ? z.iso.date().parse(q.day) : null,
         ],
       );
       const reviews = result.length
@@ -188,7 +190,7 @@ export function bookingRoutes(app: FastifyInstance) {
         fail(422, "VALIDATION_ERROR", "Выберите период до 31 дня");
       const fields =
         member.role === "master"
-          ? "b.id,b.tenant_id,b.staff_id,b.service_name_snapshot,b.start_at,b.end_at,b.status,b.version,c.display_name customer_name,s.name staff_name"
+          ? "b.id,b.tenant_id,b.staff_id,b.service_name_snapshot,b.start_at,b.end_at,b.timezone_snapshot,b.status,b.version,c.display_name customer_name,s.name staff_name"
           : "b.*,c.display_name customer_name,s.name staff_name,t.name tenant_name";
       const result = await rows<Booking>(
         db,
@@ -201,10 +203,10 @@ export function bookingRoutes(app: FastifyInstance) {
           member.role === "master" ? member.id : null,
         ],
       );
-      return list(
-        result.map((b) => bookingDTO(b, member)),
-        1000,
-      );
+      return {
+        ...list(result.map((b) => bookingDTO(b, member)), 1000),
+        timezone: (await tenantById(db, p.t!)).timezone,
+      };
     },
   );
   for (const work of [false, true]) {

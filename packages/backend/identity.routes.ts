@@ -377,7 +377,7 @@ export function identityRoutes(app: FastifyInstance) {
       description: "Безопасное разрешение стартового контекста",
     },
     async ({ db, actor, b }) => {
-      if (b.payload === "home") return { path: "/me/bookings" };
+      if (b.payload === "home") return { path: "/me/salons" };
       if (b.payload === "loyalty") return { path: "/me/loyalty" };
       const kind = b.payload.slice(0, 2),
         value = b.payload.slice(2);

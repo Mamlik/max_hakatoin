@@ -656,11 +656,17 @@ export function liveWindowRoutes(app: FastifyInstance) {
     "GET",
     "/api/v1/work/:t/live-window/settings",
     { roles: ["owner", "admin"], description: "Настройки Live Window салона" },
-    async ({ db, p }) =>
-      (await one(db, "SELECT * FROM live_window_settings WHERE tenant_id=$1", [p.t])) ?? {
-        tenantId: p.t, enabled: false, paused: false, offerTtlMinutes: 10,
+    async ({ db, p }) => {
+      const setting = await one<any>(db, "SELECT * FROM live_window_settings WHERE tenant_id=$1", [p.t]);
+      return setting ? {
+        enabled: setting.enabled, paused: setting.paused, pauseReason: setting.pause_reason,
+        offerTtlMinutes: setting.offer_ttl_minutes, minimumNoticeMinutes: setting.minimum_notice_minutes,
+        quietStart: setting.quiet_start, quietEnd: setting.quiet_end, version: setting.version,
+      } : {
+        enabled: false, paused: false, pauseReason: null, offerTtlMinutes: 10,
         minimumNoticeMinutes: 60, quietStart: "09:00", quietEnd: "21:00", version: 0,
-      },
+      };
+    },
   );
 
   route(
@@ -698,9 +704,18 @@ export function liveWindowRoutes(app: FastifyInstance) {
     "GET",
     "/api/v1/work/:t/live-window/windows",
     { roles: ["owner", "admin"], description: "Окна и обезличенная цепочка предложений" },
-    async ({ db, p }) => list(await rows(db, `SELECT w.*,s.name service_name,st.name staff_name,
+    async ({ db, p, q }) => {
+      if (q.sourceBookingId && !z.uuid().safeParse(q.sourceBookingId).success)
+        fail(422, "VALIDATION_ERROR", "Некорректная запись");
+      return list((await rows<any>(db, `SELECT w.*,s.name service_name,st.name staff_name,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('sequence',o.sequence,'status',o.status,'createdAt',o.created_at,'terminalReason',o.terminal_reason) ORDER BY o.sequence) FROM live_window_offers o WHERE o.window_id=w.id),'[]') offers
-      FROM live_windows w JOIN services s ON s.id=w.service_id JOIN staff st ON st.id=w.staff_id WHERE w.tenant_id=$1 ORDER BY w.created_at DESC LIMIT 100`, [p.t]), 100),
+      FROM live_windows w JOIN services s ON s.id=w.service_id JOIN staff st ON st.id=w.staff_id WHERE w.tenant_id=$1 AND ($2::uuid IS NULL OR w.source_booking_id=$2) ORDER BY w.created_at DESC LIMIT 100`, [p.t, q.sourceBookingId || null])).map((w) => ({
+        id: w.id, status: w.status, serviceName: w.service_name, staffName: w.staff_name,
+        startAt: w.start_at, timezoneSnapshot: w.timezone_snapshot, sourceBookingId: w.source_booking_id,
+        staffId: w.staff_id,
+        version: w.version, offers: w.offers,
+      })), 100);
+    },
   );
 
   route(
@@ -747,11 +762,15 @@ export function liveWindowRoutes(app: FastifyInstance) {
     "GET",
     "/api/v1/work/:t/live-window/summary",
     { roles: ["owner", "admin"], description: "Агрегированные метрики Live Window" },
-    async ({ db, p }) => one(db, `SELECT
+    async ({ db, p }) => {
+      const s = await one<any>(db, `SELECT
       (SELECT count(*)::int FROM waitlist_requests WHERE tenant_id=$1 AND status='active') active_requests,
       (SELECT count(*)::int FROM live_windows WHERE tenant_id=$1 AND status IN ('detected','matching','offering')) active_windows,
       (SELECT count(*)::int FROM live_windows WHERE tenant_id=$1 AND status='filled') filled_windows,
       (SELECT count(*)::int FROM live_window_offers WHERE tenant_id=$1 AND status='lost') lost_offers,
-      (SELECT count(*)::int FROM domain_outbox WHERE tenant_id=$1 AND state='dead') dead_events`, [p.t]),
+      (SELECT count(*)::int FROM domain_outbox WHERE tenant_id=$1 AND state='dead') dead_events`, [p.t]);
+      return { activeRequests: s.active_requests, activeWindows: s.active_windows,
+        filledWindows: s.filled_windows, lostOffers: s.lost_offers, deadEvents: s.dead_events };
+    },
   );
 }

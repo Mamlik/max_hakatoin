@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, afterAll, describe, it, expect } from "vitest";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
+import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { DateTime } from "luxon";
@@ -170,6 +171,14 @@ beforeAll(async () => {
         "utf8",
       ),
     );
+  if (!(await one(pool,"SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='promotions'")))
+    await pool.query(await readFile(new URL('../packages/db/migrations/006_loyalty_promotions.sql',import.meta.url),'utf8'));
+  if (!(await one(pool,"SELECT 1 FROM pg_constraint WHERE conname='loyalty_program_value_present'")))
+    await pool.query(await readFile(new URL('../packages/db/migrations/007_loyalty_reward_units.sql',import.meta.url),'utf8'));
+  if (!(await one(pool,"SELECT 1 FROM information_schema.columns WHERE table_name='vouchers' AND column_name='revocation_pending'")))
+    await pool.query(await readFile(new URL('../packages/db/migrations/008_voucher_revocation.sql',import.meta.url),'utf8'));
+  if (await one(pool,"SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid WHERE c.relname='booking_voucher' AND i.indisunique"))
+    await pool.query(await readFile(new URL('../packages/db/migrations/009_voucher_package_bookings.sql',import.meta.url),'utf8'));
   app = await createApp();
 });
 beforeEach(async () => {
@@ -182,6 +191,73 @@ afterAll(async () => {
   redis.disconnect();
 });
 describe("booking and access invariants on PostgreSQL", () => {
+  it('filters personal dates in each appointment timezone and preserves master timezone snapshots',async()=>{
+    const localDay=DateTime.now().setZone('Asia/Vladivostok').plus({days:40}).toISODate()!;
+    const start=DateTime.fromISO(`${localDay}T00:30`,{zone:'Asia/Vladivostok'}).toUTC().toISO()!;
+    await pool.query("UPDATE bookings SET start_at=$2,end_at=$2::timestamptz+interval '1 hour',timezone_snapshot='Asia/Vladivostok' WHERE id=$1",[f('booking-a-3'),start]);
+    const client=await login();
+    const list=await req<{items:{id:string}[]}>('GET',`/api/v1/me/bookings?day=${localDay}`,client);
+    expect(list.status).toBe(200);expect(list.data.items.some(b=>b.id===f('booking-a-3'))).toBe(true);
+    const prior=DateTime.fromISO(localDay).minus({days:1}).toISODate();
+    expect((await req<{items:{id:string}[]}>('GET',`/api/v1/me/bookings?day=${prior}`,client)).data.items.some(b=>b.id===f('booking-a-3'))).toBe(false);
+    const master=await req<{items:{id:string;timezoneSnapshot:string}[]}>('GET',`/api/v1/work/${f('salon-a')}/calendar?from=${encodeURIComponent(start)}&to=${encodeURIComponent(DateTime.fromISO(start).plus({days:1}).toISO()!)}`,await login('master'));
+    expect(master.status,JSON.stringify(master.error)).toBe(200);
+    expect(master.data.items.find(b=>b.id===f('booking-a-3'))?.timezoneSnapshot).toBe('Asia/Vladivostok');
+  });
+  it("creates a usable free-visit quantity through the legacy program endpoint", async () => {
+    const owner = await login("owner-a");
+    const service = await req<{id:string}>("POST", `/api/v1/work/${f("salon-a")}/services`, owner, { name: "Новая услуга", durationMin: 60, priceMinor: 100000 });
+    const program = await req<{id:string;freeVisitsCount:number;rewardType:string}>("PUT", `/api/v1/work/${f("salon-a")}/loyalty-programs`, owner, { serviceId: service.data.id, visitsRequired: 2, enabled: true, expectedVersion: 0 });
+    expect(program.status).toBe(200);
+    expect(program.data).toMatchObject({ rewardType: "free_visits", freeVisitsCount: 1 });
+    await expect(pool.query("UPDATE loyalty_programs SET free_visits_count=NULL WHERE id=$1", [program.data.id])).rejects.toMatchObject({ code: "23514" });
+  });
+  it("replaces only the salon avatar and rejects unauthorized or foreign media", async () => {
+    const owner = await login("owner-a");
+    const admin = await login("admin");
+    const salonId = f("salon-a");
+    const mediaId = randomUUID();
+    const foreignId = randomUUID();
+    const fileKey = `${mediaId.replaceAll("-", "")}${"0".repeat(16)}.webp`;
+    const privateFile = path.join(config.MEDIA_ROOT, "private", fileKey);
+    const publicFile = path.join(config.MEDIA_ROOT, "published", fileKey);
+    await mkdir(path.dirname(privateFile), { recursive: true });
+    await writeFile(privateFile, Buffer.from("avatar-test"));
+    try {
+      await pool.query("INSERT INTO media_assets(id,tenant_id,purpose,file_key) VALUES($1,$2,'logo',$3),($4,$5,'logo',$6)", [mediaId, salonId, fileKey, foreignId, f("salon-b"), `foreign-${foreignId}.webp`]);
+      await pool.query("UPDATE tenants SET draft_style=draft_style || '{\"description\":\"Unpublished draft\"}'::jsonb WHERE id=$1", [salonId]);
+      const before = await req<{version:number;draftStyle:Record<string,unknown>;publishedStyle:Record<string,unknown>}>("GET", `/api/v1/work/${salonId}/profile`, owner);
+      const endpoint = `/api/v1/work/${salonId}/storefront/avatar`;
+      const body = { expectedVersion: before.data.version, mediaId };
+      expect((await req("POST", endpoint, admin, body)).status).toBe(403);
+      expect((await req("POST", endpoint, owner, { ...body, mediaId: foreignId })).status).toBe(404);
+      expect((await req("POST", endpoint, owner, { ...body, expectedVersion: body.expectedVersion + 1 })).status).toBe(409);
+      const key = randomUUID();
+      const result = await req<{version:number;draftStyle:Record<string,unknown>;publishedStyle:Record<string,unknown>}>("POST", endpoint, owner, body, key);
+      expect(result.status).toBe(201);
+      expect(result.data.draftStyle).toEqual({ ...before.data.draftStyle, logoMediaId: mediaId });
+      expect(result.data.publishedStyle).toEqual({ ...before.data.publishedStyle, logoMediaId: mediaId });
+      expect(result.data.version).toBe(before.data.version + 1);
+      expect((await req("POST", endpoint, owner, body, key)).data).toEqual(result.data);
+      expect(await readFile(publicFile, "utf8")).toBe("avatar-test");
+      const publicImage = await app.inject({ method: "GET", url: `/media/${fileKey}` });
+      expect(publicImage.statusCode).toBe(200);
+      expect(publicImage.body).toBe("avatar-test");
+    } finally {
+      await unlink(privateFile).catch(() => {});
+      await unlink(publicFile).catch(() => {});
+    }
+  });
+  it("paginates the public salon catalogue used by profile settings", async () => {
+    const first = await req<{items:Array<{id:string}>;nextCursor:string|null}>("GET", "/api/v1/public/salons?limit=1");
+    expect(first.status).toBe(200);
+    expect(first.data.items).toHaveLength(1);
+    expect(first.data.nextCursor).toBe("1");
+    const second = await req<{items:Array<{id:string}>;nextCursor:string|null}>("GET", `/api/v1/public/salons?limit=1&cursor=${first.data.nextCursor}`);
+    expect(second.status).toBe(200);
+    expect(second.data.items).toHaveLength(1);
+    expect(second.data.items[0]?.id).not.toBe(first.data.items[0]?.id);
+  });
   it("returns published salon media in the familiar salons carousel", async () => {
     const client = await login();
     const salonId = f("salon-a");
@@ -1010,6 +1086,128 @@ describe("loyalty: paid visits earn an additional free visit", () => {
   });
 });
 
+describe('configurable loyalty and promotions',()=>{
+  it('credits two independent programs and revokes both atomically on correction',async()=>{
+    const owner=await login('owner-a'),client=await login();
+    const ids:string[]=[];
+    for(const type of ['fixed','percent'] as const){
+      const created=await req<{id:string;version:number}>('POST',`/api/v1/work/${f('salon-a')}/loyalty-programs`,owner,{
+        name:type,serviceId:f('service-a-0'),visitsRequired:2,rewardType:type,
+        fixedDiscountMinor:type==='fixed'?30000:null,discountPercent:type==='percent'?20:null,freeVisitsCount:null,
+        startsAt:null,endsAt:null,rewardValidDays:null,issueLimit:2,
+      });
+      expect(created.status,JSON.stringify(created.error)).toBe(201);ids.push(created.data.id);
+      if(type==='fixed'){
+        const changed=await req('PATCH',`/api/v1/work/${f('salon-a')}/loyalty-programs/${created.data.id}`,owner,{
+          name:type,serviceId:f('service-a-0'),visitsRequired:2,rewardType:type,fixedDiscountMinor:40000,discountPercent:null,freeVisitsCount:null,
+          startsAt:null,endsAt:null,rewardValidDays:null,issueLimit:2,expectedVersion:created.data.version,
+        });expect(changed.status,JSON.stringify(changed.error)).toBe(200);
+      }
+    }
+    const first=await req('POST',`/api/v1/work/${f('salon-a')}/bookings/${f('booking-a-3')}/complete`,owner,{expectedVersion:1});
+    expect(first.status,JSON.stringify(first.error)).toBe(201);
+    expect(await rows(pool,'SELECT program_id FROM loyalty_stamps WHERE booking_id=$1 AND program_id=ANY($2::uuid[])',[f('booking-a-3'),ids])).toHaveLength(2);
+    const second=await book(client,await quote(client,'a',10));expect(second.status).toBe(201);
+    const past=(await one<{past:Date}>(pool,"SELECT min(start_at)-interval '3 hours' past FROM bookings WHERE staff_id=$1",[f('staff-a-0')]))!.past;
+    await pool.query("UPDATE bookings SET start_at=$2,end_at=$2::timestamptz+interval '1 hour' WHERE id=$1",[second.data.id,past]);
+    const done=await req('POST',`/api/v1/work/${f('salon-a')}/bookings/${second.data.id}/complete`,owner,{expectedVersion:1});expect(done.status,JSON.stringify(done.error)).toBe(201);
+    const rewards=await rows<{program_id:string;reward_type:string}>(pool,'SELECT program_id,reward_type FROM loyalty_rewards WHERE program_id=ANY($1::uuid[])',[ids]);
+    expect(rewards).toHaveLength(2);expect(new Set(rewards.map(r=>r.reward_type))).toEqual(new Set(['fixed','percent']));
+    const corrected=await req('POST',`/api/v1/work/${f('salon-a')}/bookings/${second.data.id}/correct-outcome`,owner,{expectedVersion:2,targetStatus:'no_show',reason:'Тест коррекции'});
+    expect(corrected.status,JSON.stringify(corrected.error)).toBe(201);
+    expect((await rows(pool,'SELECT id FROM loyalty_rewards WHERE program_id=ANY($1::uuid[]) AND status=$2',[ids,'revoked']))).toHaveLength(2);
+  });
+  it('reserves a limited self promotion and releases capacity after cancellation',async()=>{
+    const owner=await login('owner-a'),client=await login();
+    const created=await req<{activeVersionId:string}>('POST',`/api/v1/work/${f('salon-a')}/promotions`,owner,{
+      providerTenantId:f('salon-a'),title:'Тестовая акция',termsText:'Скидка на стрижку',serviceIds:[f('service-a-0')],
+      discountType:'percent',fixedDiscountMinor:null,discountPercent:20,
+      startsAt:new Date(Date.now()-86400000).toISOString(),endsAt:new Date(Date.now()+86400000*10).toISOString(),useLimit:1,
+    });expect(created.status,JSON.stringify(created.error)).toBe(201);
+    const promotion=created.data.activeVersionId;
+    const q=await quote(client,'a',10,{promotionVersionId:promotion});
+    const booked=await book(client,q,'a');expect(booked.status,JSON.stringify(booked.error)).toBe(201);expect(booked.data.discountMinor).toBe(50000);
+    const other=await login('900099');
+    const blocked=await req('POST',`/api/v1/salons/${f('salon-a')}/booking-quotes`,other,{serviceId:f('service-a-0'),staffId:f('staff-a-0'),startAt:tomorrow(11),promotionVersionId:promotion});
+    expect(blocked.error.code).toBe('PROMOTION_EXHAUSTED');
+    expect((await req('POST',`/api/v1/me/bookings/${booked.data.id}/cancel`,client,{expectedVersion:1})).status).toBe(201);
+    const available=await req('POST',`/api/v1/salons/${f('salon-a')}/booking-quotes`,other,{serviceId:f('service-a-0'),staffId:f('staff-a-0'),startAt:tomorrow(11),promotionVersionId:promotion});
+    expect(available.status,JSON.stringify(available.error)).toBe(201);
+  });
+  it('restores promotion capacity on repeated outcome corrections and rejects occupied capacity',async()=>{
+    const owner=await login('owner-a'),client=await login();
+    const created=await req<{activeVersionId:string}>('POST',`/api/v1/work/${f('salon-a')}/promotions`,owner,{
+      providerTenantId:f('salon-a'),title:'Коррекция акции',termsText:'Условия',serviceIds:[f('service-a-0')],discountType:'percent',fixedDiscountMinor:null,discountPercent:20,
+      startsAt:new Date(Date.now()-86400000).toISOString(),endsAt:new Date(Date.now()+86400000*10).toISOString(),useLimit:1,
+    });expect(created.status).toBe(201);
+    const promotion=created.data.activeVersionId;
+    const booking=await book(client,await quote(client,'a',10,{promotionVersionId:promotion}));expect(booking.status).toBe(201);
+    await pool.query("UPDATE bookings SET start_at=now()-interval '2 hours',end_at=now()-interval '1 hour' WHERE id=$1",[booking.data.id]);
+    expect((await req('POST',`/api/v1/work/${f('salon-a')}/bookings/${booking.data.id}/no-show`,owner,{expectedVersion:1})).status).toBe(201);
+    const correct=(version:number,targetStatus:string)=>req('POST',`/api/v1/work/${f('salon-a')}/bookings/${booking.data.id}/correct-outcome`,owner,{expectedVersion:version,targetStatus,reason:'Исправление ошибки'});
+    expect((await correct(2,'completed')).status).toBe(201);
+    expect(await one(pool,'SELECT used_total FROM promotion_versions WHERE id=$1',[promotion])).toMatchObject({used_total:1});
+    expect((await correct(3,'no_show')).status).toBe(201);
+    expect((await correct(4,'completed')).status).toBe(201);
+    expect(await one(pool,'SELECT used_total FROM promotion_versions WHERE id=$1',[promotion])).toMatchObject({used_total:1});
+    expect((await correct(5,'no_show')).status).toBe(201);
+    const other=await login('900099');
+    expect((await book(other,await quote(other,'a',11,{promotionVersionId:promotion}))).status).toBe(201);
+    expect((await correct(6,'completed')).error.code).toBe('PROMOTION_EXHAUSTED');
+    expect(await one(pool,'SELECT status,version FROM bookings WHERE id=$1',[booking.data.id])).toMatchObject({status:'no_show',version:6});
+  });
+  it('uses a two-visit reward one booking at a time',async()=>{
+    const owner=await login('owner-a'),client=await login();
+    const created=await req<{id:string}>('POST',`/api/v1/work/${f('salon-a')}/loyalty-programs`,owner,{
+      name:'Два посещения',serviceId:f('service-a-0'),visitsRequired:2,rewardType:'free_visits',fixedDiscountMinor:null,discountPercent:null,freeVisitsCount:2,startsAt:null,endsAt:null,rewardValidDays:null,issueLimit:null,
+    });expect(created.status,JSON.stringify(created.error)).toBe(201);
+    expect((await req('POST',`/api/v1/work/${f('salon-a')}/bookings/${f('booking-a-3')}/complete`,owner,{expectedVersion:1})).status).toBe(201);
+    const paid=await book(client,await quote(client));expect(paid.status).toBe(201);
+    const past=(await one<{past:Date}>(pool,"SELECT min(start_at)-interval '3 hours' past FROM bookings WHERE staff_id=$1",[f('staff-a-0')]))!.past;
+    await pool.query("UPDATE bookings SET start_at=$2,end_at=$2::timestamptz+interval '1 hour' WHERE id=$1",[paid.data.id,past]);
+    expect((await req('POST',`/api/v1/work/${f('salon-a')}/bookings/${paid.data.id}/complete`,owner,{expectedVersion:1})).status).toBe(201);
+    const reward=(await one<{id:string;remaining_visits:number}>(pool,'SELECT id,remaining_visits FROM loyalty_rewards WHERE program_id=$1',[created.data.id]))!;
+    expect(reward.remaining_visits).toBe(2);
+    const first=await book(client,await quote(client,'a',10,{loyaltyRewardId:reward.id}));
+    const second=await book(client,await quote(client,'a',11,{loyaltyRewardId:reward.id}));
+    expect(first.status).toBe(201);expect(second.status).toBe(201);
+    const blocked=await req('POST',`/api/v1/salons/${f('salon-a')}/booking-quotes`,client,{serviceId:f('service-a-0'),staffId:f('staff-a-0'),startAt:tomorrow(12),loyaltyRewardId:reward.id});
+    expect(blocked.error.code).toBe('LOYALTY_REWARD_UNAVAILABLE');
+    await pool.query("UPDATE bookings SET start_at=$2,end_at=$2::timestamptz+interval '1 hour' WHERE id=$1",[first.data.id,new Date(past.getTime()-7200000)]);
+    expect((await req('POST',`/api/v1/work/${f('salon-a')}/bookings/${first.data.id}/complete`,owner,{expectedVersion:1})).status).toBe(201);
+    expect((await one<{remaining_visits:number}>(pool,'SELECT remaining_visits FROM loyalty_rewards WHERE id=$1',[reward.id]))!.remaining_visits).toBe(1);
+    expect((await req('POST',`/api/v1/me/bookings/${second.data.id}/cancel`,client,{expectedVersion:1})).status).toBe(201);
+    expect((await book(client,await quote(client,'a',11,{loyaltyRewardId:reward.id}))).status).toBe(201);
+  });
+  it('requires provider approval and honors each partner pause',async()=>{
+    const a=await login('owner-a'),b=await login('owner-b'),client=await login();
+    for(const [tenant,token] of [['a',a],['b',b]])expect((await req('PATCH',`/api/v1/work/${f(`salon-${tenant}`)}/partner-settings`,token,{expectedVersion:1,enabled:true})).status).toBe(200);
+    const created=await req<{id:string;version:number;pendingVersionId:string}>('POST',`/api/v1/work/${f('salon-a')}/promotions`,a,{
+      providerTenantId:f('salon-b'),title:'Скидка партнёра',termsText:'Тест согласования',serviceIds:[f('service-b-0')],discountType:'fixed',fixedDiscountMinor:30000,discountPercent:null,
+      startsAt:new Date(Date.now()-86400000).toISOString(),endsAt:new Date(Date.now()+86400000*10).toISOString(),useLimit:null,
+    });expect(created.status,JSON.stringify(created.error)).toBe(201);
+    const before=await req<{items:{id:string}[]}>('GET','/api/v1/me/promotions',client);
+    expect(before.data.items.some(p=>p.id===created.data.pendingVersionId)).toBe(false);
+    const accepted=await req<{activeVersionId:string;version:number}>('POST',`/api/v1/work/${f('salon-b')}/promotions/${created.data.id}/accept`,b,{expectedVersion:created.data.version});
+    expect(accepted.status,JSON.stringify(accepted.error)).toBe(201);
+    const after=await req<{items:{id:string}[]}>('GET','/api/v1/me/promotions',client);
+    expect(after.data.items.some(p=>p.id===accepted.data.activeVersionId)).toBe(true);
+    const paused=await req('POST',`/api/v1/work/${f('salon-a')}/promotions/${created.data.id}/pause`,a,{expectedVersion:accepted.data.version});expect(paused.status).toBe(201);
+    const hidden=await req<{items:{id:string}[]}>('GET','/api/v1/me/promotions',client);
+    expect(hidden.data.items.some(p=>p.id===accepted.data.activeVersionId)).toBe(false);
+    const providerResume=await req('POST',`/api/v1/work/${f('salon-b')}/promotions/${created.data.id}/resume`,b,{expectedVersion:(paused.data as {version:number}).version});expect(providerResume.status).toBe(201);
+    const stillHidden=await req<{items:{id:string}[]}>('GET','/api/v1/me/promotions',client);
+    expect(stillHidden.data.items.some(p=>p.id===accepted.data.activeVersionId)).toBe(false);
+    const updated=await req<{version:number;pendingVersionId:string}>('POST',`/api/v1/work/${f('salon-b')}/promotions/${created.data.id}/versions`,b,{
+      expectedVersion:(providerResume.data as {version:number}).version,providerTenantId:f('salon-b'),title:'Версия исполнителя',termsText:'Новая скидка 20%',serviceIds:[f('service-b-0')],discountType:'percent',fixedDiscountMinor:null,discountPercent:20,
+      startsAt:new Date(Date.now()-86400000).toISOString(),endsAt:new Date(Date.now()+86400000*10).toISOString(),useLimit:null,
+    });expect(updated.status,JSON.stringify(updated.error)).toBe(201);
+    const otherAccepted=await req<{activeVersionId:string}>('POST',`/api/v1/work/${f('salon-a')}/promotions/${created.data.id}/accept`,a,{expectedVersion:updated.data.version});
+    expect(otherAccepted.status,JSON.stringify(otherAccepted.error)).toBe(201);
+    expect(otherAccepted.data.activeVersionId).toBe(updated.data.pendingVersionId);
+  });
+});
+
 describe("post-visit master reviews", () => {
   const completed = f("booking-a-0");
 
@@ -1533,7 +1731,7 @@ describe("MAX durable channel lifecycle", () => {
           { payload: "home" },
         )
       ).data.path,
-    ).toBe("/me/bookings");
+    ).toBe("/me/salons");
   });
   it("requires webhook secret and persists before acknowledging", async () => {
     const denied = await app.inject({
@@ -1672,6 +1870,8 @@ describe("partnership agreement and vouchers", () => {
       },
     );
     expect(accepted.status, JSON.stringify(accepted.error)).toBe(201);
+    const consent=await req('PUT',`/api/v1/me/campaigns/${s.c.id}/consent`,s.client,{versionId:s.v.id,granted:true});
+    expect(consent.status,JSON.stringify(consent.error)).toBe(200);
   }
   async function complete(s: Awaited<ReturnType<typeof setup>>) {
     const r = await req(
@@ -1789,25 +1989,48 @@ describe("partnership agreement and vouchers", () => {
       ))!.status,
     ).toBe("redeemed");
   });
+  it('restores one package unit only once across repeated outcome corrections',async()=>{
+    const s=await setup();await accept(s);const v=await complete(s);
+    await pool.query("UPDATE vouchers SET reward_type='free_visits',discount_minor=NULL,free_visits_count=3,remaining_visits=3,issued_at=now()-interval '1 day' WHERE id=$1",[v.id]);
+    const booking=await book(s.client,await quote(s.client,'b',10,{voucherId:v.id}),'b');expect(booking.status).toBe(201);
+    await pool.query("UPDATE bookings SET start_at=now()-interval '2 hours',end_at=now()-interval '1 hour' WHERE id=$1",[booking.data.id]);
+    expect((await req('POST',`/api/v1/work/${f('salon-b')}/bookings/${booking.data.id}/no-show`,s.b,{expectedVersion:1})).status).toBe(201);
+    for(const [version,targetStatus] of [[2,'completed'],[3,'no_show'],[4,'completed']] as const){
+      const corrected=await req('POST',`/api/v1/work/${f('salon-b')}/bookings/${booking.data.id}/correct-outcome`,s.b,{expectedVersion:version,targetStatus,restorePreviousVoucher:true,reason:'Исправление ошибки'});
+      expect(corrected.status,JSON.stringify(corrected.error)).toBe(201);
+    }
+    expect(await one(pool,'SELECT remaining_visits,status FROM vouchers WHERE id=$1',[v.id])).toMatchObject({remaining_visits:2,status:'issued'});
+    expect(await one(pool,'SELECT status FROM voucher_uses WHERE voucher_id=$1 AND booking_id=$2',[v.id,booking.data.id])).toMatchObject({status:'redeemed'});
+  });
+  it('requires consent for a reserved package and prevents reuse after a preserved booking cancels',async()=>{
+    const s=await setup();await accept(s);const v=await complete(s);
+    await pool.query("UPDATE vouchers SET reward_type='free_visits',discount_minor=NULL,free_visits_count=2,remaining_visits=2 WHERE id=$1",[v.id]);
+    const first=await book(s.client,await quote(s.client,'b',10,{voucherId:v.id}),'b');
+    const second=await book(s.client,await quote(s.client,'b',12,{voucherId:v.id}),'b');
+    expect(first.status).toBe(201);expect(second.status,JSON.stringify(second.error)).toBe(201);
+    const current=await one<{version:number}>(pool,'SELECT version FROM vouchers WHERE id=$1',[v.id]);
+    expect((await req('POST',`/api/v1/work/${f('salon-b')}/vouchers/${v.id}/revoke`,s.b,{expectedVersion:current!.version,reason:'Отзыв пакета'})).error.code).toBe('INVALID_STATE_TRANSITION');
+    const request=await req<{id:string}>('POST',`/api/v1/work/${f('salon-b')}/vouchers/${v.id}/revocation-requests`,s.b,{expectedVersion:current!.version,bookingId:first.data.id,reason:'Отзыв пакета'});
+    expect(request.status,JSON.stringify(request.error)).toBe(201);
+    expect((await req('POST',`/api/v1/me/voucher-revocation-requests/${request.data.id}/respond`,s.client,{expectedVersion:1,expectedBookingVersion:1,accept:true})).status).toBe(201);
+    const preserved=await one<{discount_minor:number;price_minor_snapshot:number}>(pool,'SELECT discount_minor,price_minor_snapshot FROM bookings WHERE id=$1',[second.data.id]);
+    expect(preserved!.discount_minor).toBe(preserved!.price_minor_snapshot);
+    expect((await req('POST',`/api/v1/me/bookings/${second.data.id}/cancel`,s.client,{expectedVersion:1})).status).toBe(201);
+    expect(await one(pool,'SELECT status,remaining_visits FROM vouchers WHERE id=$1',[v.id])).toMatchObject({status:'revoked',remaining_visits:0});
+    const rejected=await req('POST',`/api/v1/salons/${f('salon-b')}/booking-quotes`,s.client,{serviceId:f('service-b-0'),staffId:f('staff-b-0'),startAt:tomorrow(12),voucherId:v.id});
+    expect(rejected.error.code).toBe('VOUCHER_UNAVAILABLE');
+  });
   it("does not issue retrospectively when consent is enabled after completion", async () => {
     const s = await setup();
     await accept(s);
-    await req("PATCH", "/api/v1/me/preferences", s.client, {
-      expectedVersion: 2,
-      partnerProgramEnabled: false,
-      textVersion: "p0-v1",
-    });
+    await req('PUT',`/api/v1/me/campaigns/${s.c.id}/consent`,s.client,{versionId:s.v.id,granted:false});
     await req(
       "POST",
       `/api/v1/work/${f("salon-a")}/bookings/${f("booking-a-3")}/complete`,
       s.a,
       { expectedVersion: 1 },
     );
-    await req("PATCH", "/api/v1/me/preferences", s.client, {
-      expectedVersion: 3,
-      partnerProgramEnabled: true,
-      textVersion: "p0-v1",
-    });
+    await req('PUT',`/api/v1/me/campaigns/${s.c.id}/consent`,s.client,{versionId:s.v.id,granted:true});
     expect(await rows(pool, "SELECT id FROM vouchers")).toHaveLength(0);
   });
   it("keeps the reserved price until client explicitly approves revocation", async () => {
@@ -1882,6 +2105,22 @@ describe("partnership agreement and vouchers", () => {
       { expectedVersion: 1 },
     );
     expect(await rows(pool, "SELECT id FROM vouchers")).toHaveLength(0);
+  });
+  it('does not carry client consent to a new partner version',async()=>{
+    const s=await setup();await accept(s);
+    const next=await req<{version:number;versions:{id:string;termsHash:string}[]}>('POST',`/api/v1/work/${f('salon-a')}/campaigns/${s.c.id}/versions`,s.a,{
+      expectedVersion:3,sourceServiceIds:[f('service-a-0')],targetServiceIds:[f('service-b-0')],discountMinor:20000,
+      issueFrom:new Date(Date.now()-86400000).toISOString(),issueUntil:null,voucherValidDays:null,issueLimit:null,termsText:'Новая версия условий',
+    });expect(next.status,JSON.stringify(next.error)).toBe(201);
+    const v=next.data.versions[0]!;
+    expect((await req('POST',`/api/v1/work/${f('salon-a')}/campaigns/${s.c.id}/versions/${v.id}/propose`,s.a,{expectedVersion:next.data.version})).status).toBe(201);
+    const current=(await req<{version:number}>('GET',`/api/v1/work/${f('salon-b')}/campaigns/${s.c.id}`,s.b)).data;
+    const accepted=await req('POST',`/api/v1/work/${f('salon-b')}/campaigns/${s.c.id}/versions/${v.id}/accept`,s.b,{expectedVersion:current.version,termsHash:v.termsHash,explicitConfirmation:true});
+    expect(accepted.status,JSON.stringify(accepted.error)).toBe(201);
+    expect((await req('POST',`/api/v1/work/${f('salon-a')}/bookings/${f('booking-a-3')}/complete`,s.a,{expectedVersion:1})).status).toBe(201);
+    expect(await rows(pool,'SELECT id FROM vouchers WHERE campaign_id=$1',[s.c.id])).toHaveLength(0);
+    const consent=await req('PUT',`/api/v1/me/campaigns/${s.c.id}/consent`,s.client,{versionId:v.id,granted:true});expect(consent.status).toBe(200);
+    expect((await one<{granted:boolean}>(pool,'SELECT granted FROM campaign_customer_consents WHERE user_id=$1 AND version_id=$2',[f('client'),v.id]))!.granted).toBe(true);
   });
 });
 
@@ -2815,9 +3054,8 @@ describe("Live Window Lite", () => {
     const holder = await login("client");
     const occupied = await book(holder, await quote(holder));
     const waiting = await candidate("900030");
-    const localDate = DateTime.now()
+    const localDate = DateTime.fromISO(tomorrow(),{zone:'utc'})
       .setZone("Asia/Yekaterinburg")
-      .plus({ days: 1 })
       .toISODate()!;
     const request = await waitWith(waiting.token, {
       dateFrom: localDate,

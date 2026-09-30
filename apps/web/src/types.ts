@@ -106,6 +106,7 @@ export interface Booking {
   totalMinor?: number;
   appliedVoucherId?: string | null;
   loyaltyRewardId?: string | null;
+  promotionVersionId?: string | null;
   allowedActions: string[];
   reviewRating?: number | null;
   reviewStatus?: "active" | "invalidated" | null;
@@ -151,6 +152,7 @@ export interface Quote {
   durationMin: number;
   removeVoucher?: boolean;
   loyaltyRewardId?: string | null;
+  promotionVersionId?: string | null;
 }
 export interface Customer {
   id: string;
@@ -194,10 +196,12 @@ export interface Voucher {
   sourceName: string;
   targetCode: string;
   status: string;
-  discountMinor: number;
+  discountMinor: number | null;
+  rewardType:'fixed'|'percent'|'free_visits';discountPercent:number|null;remainingVisits:number|null;
+  reservedVisits:number;
   targetServiceIds: string[];
   termsSnapshot: { termsText: string };
-  expiresAt: string;
+  expiresAt: string | null;
   issuedAt: string;
   version: number;
 }
@@ -215,11 +219,12 @@ export interface CampaignVersion {
   status: string;
   sourceServiceIds: string[];
   targetServiceIds: string[];
-  discountMinor: number;
-  issueFrom: string;
-  issueUntil: string;
-  voucherValidDays: number;
-  issueLimit: number;
+  discountMinor: number|null;
+  rewardType:'fixed'|'percent'|'free_visits';discountPercent:number|null;freeVisitsCount:number|null;
+  issueFrom: string|null;
+  issueUntil: string|null;
+  voucherValidDays: number|null;
+  issueLimit: number|null;
   termsText: string;
   termsHash: string;
   proposedByTenantId: string | null;

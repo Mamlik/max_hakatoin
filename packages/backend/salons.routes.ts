@@ -117,7 +117,7 @@ async function publishCatalogMedia(
   db: DB,
   tenantId: string,
   mediaId: string | null | undefined,
-  purpose: "staff" | "service",
+  purpose: "staff" | "service" | "logo",
 ) {
   if (!mediaId) return;
   const media = required(
@@ -158,15 +158,29 @@ export function salonRoutes(app: FastifyInstance) {
     "/api/v1/public/salons",
     {
       public: true,
-      description: "Поиск опубликованных салонов по названию или коду",
+      description: "Поиск опубликованных салонов по названию, коду, категории и активным услугам",
     },
     async ({ db, q }) => {
+      const requestedLimit = Number(q.limit);
+      const requestedOffset = Number(q.cursor);
+      const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? Math.min(100, requestedLimit) : 100;
+      const offset = Number.isSafeInteger(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
       const result = await rows<Tenant>(
         db,
-        "SELECT * FROM tenants WHERE status='published' AND ($1='' OR lower(published_profile->>'name') LIKE '%'||lower($1)||'%' OR public_code=$1) ORDER BY name LIMIT 100",
-        [(q.query ?? "").slice(0, 120)],
+        `SELECT t.* FROM tenants t WHERE t.status='published' AND
+          ($1='' OR lower(t.published_profile->>'name') LIKE '%'||lower($1)||'%'
+           OR lower(t.published_profile->>'category') LIKE '%'||lower($1)||'%'
+           OR lower(t.published_profile->>'address') LIKE '%'||lower($1)||'%'
+           OR lower(t.public_code)=lower($1)
+           OR EXISTS (SELECT 1 FROM services s WHERE s.tenant_id=t.id AND s.active=true
+             AND (lower(s.name) LIKE '%'||lower($1)||'%' OR lower(s.description) LIKE '%'||lower($1)||'%')))
+         ORDER BY t.name, t.id LIMIT $2 OFFSET $3`,
+        [(q.query ?? "").slice(0, 120), limit + 1, offset],
       );
-      return list(await Promise.all(result.map((t) => publicSalon(db, t))));
+      return {
+        items: await Promise.all(result.slice(0, limit).map((t) => publicSalon(db, t))),
+        nextCursor: result.length > limit ? String(offset + limit) : null,
+      };
     },
   );
   route(
@@ -406,6 +420,31 @@ export function salonRoutes(app: FastifyInstance) {
       version(t, b.expectedVersion);
       await audit(db, t.id, actor.id, "storefront.published", t.id);
       return publishStyle(db, t);
+    },
+  );
+  route(
+    app,
+    "POST",
+    "/api/v1/work/:t/storefront/avatar",
+    {
+      roles: ["owner"],
+      schema: expected.extend({ mediaId: id }).strict(),
+      description: "Немедленная замена логотипа салона без публикации остального черновика",
+    },
+    async ({ db, actor, p, b }) => {
+      const t = await tenantById(db, p.t!);
+      version(t, b.expectedVersion);
+      await publishCatalogMedia(db, t.id, b.mediaId, "logo");
+      await audit(db, t.id, actor.id, "storefront.avatar", b.mediaId);
+      return one(
+        db,
+        "UPDATE tenants SET draft_style=$2,published_style=$3,version=version+1 WHERE id=$1 RETURNING *",
+        [
+          t.id,
+          JSON.stringify({ ...t.draft_style, logoMediaId: b.mediaId }),
+          JSON.stringify({ ...t.published_style, logoMediaId: b.mediaId }),
+        ],
+      );
     },
   );
   for (const action of ["publish", "pause", "archive", "restore"])

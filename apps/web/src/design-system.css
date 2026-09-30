@@ -1,0 +1,87 @@
+:root{--purple:#471aff;--purple-dark:#3511c7;--accent:#471aff;--accent-light:#ede9ff;--line:#e1dcef;--surface:#fff;--canvas:#f8f7fd;--ink:#160d2b;--text-muted:#695f7b;color:var(--ink);background:var(--canvas)}
+body{background:var(--canvas);color:var(--ink)}
+.sidebar,.topbar,.panel,.salon-card,.booking-card,.data-list,.event-list,.service-list,.stat-card,.modal,.offer-card{background:var(--surface)}
+.wordmark,h1,h2,h3,.booking-card,.history-row strong{color:var(--ink)}
+p,.muted,small{color:var(--text-muted)}
+.brand-mark{box-shadow:0 8px 22px #471aff35}
+.nav-item.active{background:var(--accent-light);color:var(--purple)}
+.nav-item:hover,.icon-button:hover{background:var(--accent-light)}
+.button,.persona,.salon-card,.booking-card,.panel,.modal{border-radius:16px}
+.button{min-height:44px}.primary{box-shadow:0 7px 19px #471aff21}
+.page-title{align-items:flex-start}.page-title h1{font-size:clamp(27px,3vw,39px)}
+.place-search{max-width:none;min-height:58px;display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:0 17px;border-radius:16px;background:var(--surface);box-shadow:0 7px 25px #32146509}
+.place-search svg{width:22px;height:22px;align-self:center;justify-self:center;stroke-width:2.5}
+.place-search input{width:100%;height:56px;min-height:56px;padding:0;background:transparent;align-self:center;box-shadow:none;border:0;line-height:20px}
+.place-search input:focus{box-shadow:none}.place-search:focus-within{border-color:var(--purple);box-shadow:0 0 0 3px #471aff18}
+.familiar-feature .salon-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:250px;border-radius:24px;overflow:hidden;box-shadow:0 16px 38px #32146513}
+.familiar-feature .salon-cover{height:100%;min-height:250px;background:linear-gradient(125deg,#d2caff,#d8f2ff)}
+.familiar-feature .salon-card-info{align-items:center;padding:30px}.familiar-feature .salon-card-info h3{font-size:24px}
+.salon-context-tabs{display:flex;gap:8px;overflow-x:auto;margin:6px 0 20px;padding:3px 0}.salon-context-tabs button{flex:0 0 auto;min-height:43px;border:1px solid var(--line);background:var(--surface);color:var(--text-muted);border-radius:12px;padding:9px 15px;font-weight:750}.salon-context-tabs button.selected{background:var(--purple);color:#fff;border-color:var(--purple)}
+.profile-links{display:flex;flex-wrap:wrap;gap:9px;margin:-8px 0 22px}.profile-links a{display:inline-flex;align-items:center;min-height:42px;padding:9px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;font-weight:700}
+.theme-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.theme-options button{min-height:74px;display:flex;align-items:center;justify-content:center;gap:10px;border:1px solid var(--line);border-radius:14px;background:var(--canvas);color:var(--ink);font-weight:750}.theme-options button span{font-size:24px}.theme-options button.selected{border:2px solid var(--purple);background:var(--accent-light);color:var(--purple)}
+.staff-filter{position:relative;max-width:580px;margin:0 0 18px;z-index:8}.staff-filter .eyebrow{display:block;margin:0 0 5px}.staff-filter-trigger{width:100%;min-height:48px;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:var(--ink);padding:0 15px;display:flex;align-items:center;justify-content:space-between;font-weight:750}.staff-filter-trigger span{font-size:22px;color:var(--purple)}.staff-filter-menu{position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:10px;box-shadow:0 18px 40px #170b302c}.staff-filter-menu input{width:100%;margin-bottom:7px}.staff-filter-menu button{display:block;width:100%;min-height:40px;text-align:left;border:0;border-radius:9px;background:transparent;color:var(--ink);padding:8px 11px}.staff-filter-menu button:hover{background:var(--accent-light)}
+.month-layout{display:grid;grid-template-columns:minmax(320px,560px) minmax(280px,1fr);gap:26px;align-items:start}.month-calendar{padding:20px}.month-heading{display:grid;grid-template-columns:42px 1fr 42px;gap:8px;align-items:center;text-align:center;margin-bottom:20px}.month-heading button{width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--line);border-radius:12px;background:var(--canvas);color:var(--ink);font-size:28px}.month-heading h2{text-transform:capitalize;font-size:19px}.month-heading span{font-size:11px;color:var(--text-muted)}.month-weekdays,.month-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;text-align:center}.month-weekdays{font-size:11px;color:var(--text-muted);font-weight:800;margin-bottom:7px}.month-days button{aspect-ratio:1;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:1px solid transparent;border-radius:12px;background:transparent;color:var(--ink);font-weight:750}.month-days button:hover{background:var(--accent-light)}.month-days button.selected{background:var(--purple);color:#fff}.month-days button small{width:17px;height:17px;display:grid;place-items:center;border-radius:50%;background:var(--accent-light);color:var(--purple);font-size:10px}.month-days button.selected small{background:#fff}.month-agenda .section-head{margin-top:3px}.agenda-list{display:grid;gap:10px}.agenda-list .booking-card{width:100%}
+.open-windows{margin-top:24px;padding-top:18px;border-top:1px solid var(--line)}.open-windows>p{margin:2px 0 13px}.open-windows .booking-card{margin:8px 0;justify-content:space-between;background:var(--accent-light)}
+@media(max-width:1000px){.month-layout{grid-template-columns:1fr}.month-calendar{max-width:620px}}
+@media(max-width:900px){.personal-shell .sidebar{position:fixed;inset:auto 0 0;width:100%;height:auto;display:block;padding:0;background:var(--surface);border-top:1px solid var(--line);border-bottom:0;z-index:50}.personal-shell .sidebar>.wordmark,.personal-shell .workspace-switch,.personal-shell .sidebar-bottom{display:none}.personal-shell .sidebar nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0;padding:3px 8px max(5px,env(safe-area-inset-bottom));gap:3px}.personal-shell .sidebar nav .nav-item:nth-child(n+5){display:none}.personal-shell .nav-item{min-height:60px;justify-content:center;border-radius:11px;padding:5px 2px;font-size:11px;font-weight:750}.personal-shell .nav-item svg{width:23px;height:23px;stroke-width:2.5}.personal-shell .main-column main{padding-bottom:110px}.personal-shell footer{padding-bottom:95px}.work-shell .sidebar nav{display:flex;flex-direction:row;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin}.work-shell .nav-item{min-width:88px;flex:0 0 auto}.work-shell .sidebar{position:sticky;top:0}.main-column{margin-left:0}}
+@media(max-width:640px){.familiar-feature .salon-card{display:block;min-height:0}.familiar-feature .salon-cover{height:165px;min-height:165px}.familiar-feature .salon-card-info{padding:21px}.familiar-feature .salon-card-info h3{font-size:20px}.month-calendar{padding:14px}.month-days button{min-height:38px}.month-layout{gap:8px}.profile-links a{font-size:12px}.place-search input{font-size:13px}}
+html[data-theme="dark"]{--purple:#b3a3ff;--purple-dark:#9b88ff;--accent:#b3a3ff;--accent-light:#2d2054;--line:#403154;--surface:#1c1130;--canvas:#0d001a;--ink:#f8f5ff;--text-muted:#b9afca;color-scheme:dark}
+html[data-theme="dark"] .sidebar,html[data-theme="dark"] .topbar,html[data-theme="dark"] .panel,html[data-theme="dark"] .salon-card,html[data-theme="dark"] .booking-card,html[data-theme="dark"] .data-list,html[data-theme="dark"] .event-list,html[data-theme="dark"] .service-list,html[data-theme="dark"] .stat-card,html[data-theme="dark"] .modal,html[data-theme="dark"] .offer-card,html[data-theme="dark"] .storefront,html[data-theme="dark"] .persona{background:var(--surface);color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] p,html[data-theme="dark"] small,html[data-theme="dark"] .muted,html[data-theme="dark"] dt,html[data-theme="dark"] dd{color:var(--text-muted)}
+html[data-theme="dark"] input,html[data-theme="dark"] select,html[data-theme="dark"] textarea,html[data-theme="dark"] .secondary,html[data-theme="dark"] .search-box,html[data-theme="dark"] .tabs button.selected,html[data-theme="dark"] .day-strip button,html[data-theme="dark"] .service-row,html[data-theme="dark"] .version-card{background:#211536;color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] .primary,html[data-theme="dark"] .salon-context-tabs button.selected,html[data-theme="dark"] .month-days button.selected{background:#6e1aff;color:#fff;border-color:#6e1aff}
+html[data-theme="dark"] .notice,html[data-theme="dark"] .empty,html[data-theme="dark"] .note,html[data-theme="dark"] .date-tile,html[data-theme="dark"] .workspace-switch,html[data-theme="dark"] .tabs,html[data-theme="dark"] .welcome-banner{background:#2d2054;color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] .notice.error{background:#512631;color:#ffd2da}html[data-theme="dark"] .notice.success{background:#193b35;color:#bbf0d5}
+html[data-theme="dark"] .booking-card h3,html[data-theme="dark"] .booking-card strong,html[data-theme="dark"] .stat-card strong,html[data-theme="dark"] .salon-card h3,html[data-theme="dark"] .storefront h1,html[data-theme="dark"] .welcome-banner h2{color:var(--ink)}
+html[data-theme="dark"] .login-page{background:var(--canvas)}html[data-theme="dark"] .login-art{background:#211536}html[data-theme="dark"] .login-art h1,html[data-theme="dark"] .login-panel h2,html[data-theme="dark"] .persona strong{color:var(--ink)}html[data-theme="dark"] .login-panel{background:var(--canvas)}
+html[data-theme="dark"] .customer-row,html[data-theme="dark"] .history-row,html[data-theme="dark"] .staff-card,html[data-theme="dark"] .salon-context-tabs button,html[data-theme="dark"] .profile-links a,html[data-theme="dark"] .file-pick,html[data-theme="dark"] .timezone-picker span,html[data-theme="dark"] .sub-panel,html[data-theme="dark"] .link-box,html[data-theme="dark"] .slots-grid button,html[data-theme="dark"] .star-picker span{background:var(--surface);color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] .event-row.unread,html[data-theme="dark"] .offer-card:before,html[data-theme="dark"] .event-icon,html[data-theme="dark"] .staff-avatar,html[data-theme="dark"] .circle-arrow{background:var(--accent-light);color:var(--purple)}
+html[data-theme="dark"] .field>span,html[data-theme="dark"] .check,html[data-theme="dark"] .choice-field>legend,html[data-theme="dark"] .customer-row p,html[data-theme="dark"] .service-row p,html[data-theme="dark"] .staff-card p,html[data-theme="dark"] .booking-card p{color:var(--text-muted)}
+html[data-theme="dark"] .theme-options button.selected{color:#d6cbff}html[data-theme="dark"] .salon-context-tabs button.selected{background:#6e1aff;color:#fff}
+
+.mobile-appbar{display:none}
+.topbar-date{font-weight:650;color:var(--text-muted)}
+.booking-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin:0 0 22px}
+.booking-toolbar .tabs{margin:0}
+.booking-filters{display:flex;align-items:center;flex-wrap:wrap;gap:9px}
+.booking-filters select,.booking-filters input{min-height:43px;width:auto;max-width:210px;border-radius:11px;background:var(--surface);color:var(--ink)}
+.booking-filters input{max-width:170px}
+.booking-filters .text-button{min-height:40px}
+.salon-picker{position:relative;max-width:580px;margin:0 0 20px;z-index:9}
+.salon-picker-trigger{width:100%;min-height:51px;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 15px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font-weight:800}
+.salon-picker-trigger span:last-child{font-size:23px;color:var(--purple)}
+.salon-picker-menu{position:absolute;top:calc(100% + 5px);left:0;right:0;background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:10px;box-shadow:0 18px 40px #170b302c}
+.salon-picker-menu input{width:100%;margin-bottom:8px;background:var(--surface);color:var(--ink)}
+.salon-picker-options{max-height:260px;overflow-y:auto}
+.salon-picker-options button{width:100%;min-height:41px;display:flex;align-items:center;justify-content:space-between;text-align:left;padding:8px 11px;border:0;border-radius:9px;background:transparent;color:var(--ink)}
+.salon-picker-options button:hover,.salon-picker-options button[aria-pressed="true"]{background:var(--accent-light)}
+.salon-picker-options p{padding:6px 10px}
+.salon-preferences-grid:not(:has(.panel:nth-child(2))){grid-template-columns:minmax(0,580px)}
+.salon-settings-section{scroll-margin-top:80px;margin:24px 0 30px}
+@media(max-width:900px){
+  .mobile-appbar{height:61px;display:grid;grid-template-columns:34px minmax(74px,1fr) minmax(110px,155px) 34px;align-items:center;gap:8px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:60}
+  .mobile-back,.mobile-role-switch{width:34px;height:36px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--ink)}
+  .mobile-back svg{transform:rotate(180deg);width:20px;height:20px}
+  .mobile-role-switch svg{width:19px;height:19px}
+  .mobile-wordmark{font-size:23px;font-weight:900;letter-spacing:-1.3px;color:var(--ink);white-space:nowrap}
+  .mobile-wordmark span{color:var(--purple)}
+  .mobile-workspace-select{width:100%;min-width:0;min-height:40px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--accent-light);color:var(--ink);border:1px solid var(--line);border-radius:11px;padding:7px 25px 7px 10px;font-weight:750;font-size:12px}
+  .topbar{display:none}
+  .work-shell .sidebar{position:fixed;inset:auto 0 0;display:block;width:100%;height:auto;padding:0;background:var(--surface);border:0;border-top:1px solid var(--line);z-index:50}
+  .work-shell .sidebar>.wordmark,.work-shell .workspace-switch,.work-shell .sidebar-bottom{display:none}
+  .work-shell .sidebar nav{display:flex;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;gap:3px;margin:0;padding:3px 8px max(5px,env(safe-area-inset-bottom));scrollbar-width:thin;overscroll-behavior-inline:contain}
+  .work-shell .sidebar nav .nav-item{min-width:90px;min-height:57px;flex:0 0 auto;align-items:center;justify-content:center;padding:6px;font-size:11px;font-weight:750}
+  .master-shell .sidebar nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+  .master-shell .sidebar nav .nav-item{min-width:0}
+  .work-shell .main-column main{padding-bottom:110px}
+  .work-shell footer{padding-bottom:95px}
+  .personal-shell .sidebar{top:auto}
+}
+@media(max-width:640px){.booking-toolbar{align-items:stretch}.booking-toolbar .tabs{width:100%}.booking-toolbar .tabs button{flex:1}.booking-filters{width:100%}.booking-filters select,.booking-filters input{flex:1;min-width:0;max-width:none}.salon-picker{max-width:none}}
+.salon-avatar-panel{display:flex;align-items:center;gap:20px}
+.salon-avatar-preview{width:92px;height:92px;flex:0 0 92px;display:grid;place-items:center;overflow:hidden;border-radius:22px;background:var(--accent-light);color:var(--purple);font-size:40px;font-weight:800}
+.salon-avatar-preview img{width:100%;height:100%;object-fit:cover}
+.salon-avatar-details{min-width:0}.salon-avatar-details h2{margin-bottom:3px}.salon-avatar-details p{margin:0 0 12px}
+[data-theme="dark"] .timezone-picker strong{color:var(--ink)}
+@media(max-width:640px){.schedule-day{min-width:0}.interval{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;width:100%;min-width:0}.interval select{grid-column:1/-1;width:100%}.interval input[type="time"]{width:100%;min-width:0;padding:9px 4px}.interval .icon-button{width:28px}}
+@media(max-width:640px){.salon-avatar-panel{align-items:flex-start;gap:14px}.salon-avatar-preview{width:68px;height:68px;flex-basis:68px;border-radius:16px;font-size:30px}}

@@ -207,7 +207,7 @@ export function crmRoutes(app: FastifyInstance) {
       return list(
         await rows(
           db,
-          "SELECT id,discount_minor,target_service_ids,expires_at,terms_snapshot FROM vouchers WHERE user_id=$1 AND target_tenant_id=$2 AND status='issued' AND expires_at>now()",
+          "SELECT id,discount_minor,reward_type,discount_percent,free_visits_count,remaining_visits,(SELECT count(*)::int FROM voucher_uses u WHERE u.voucher_id=v.id AND u.status='reserved') reserved_visits,target_service_ids,expires_at,terms_snapshot FROM vouchers v WHERE user_id=$1 AND target_tenant_id=$2 AND status='issued' AND (expires_at IS NULL OR expires_at>now())",
           [c.user_id, p.t],
         ),
       );

@@ -363,6 +363,8 @@ async function tick() {
       await db.query(
         "UPDATE vouchers SET status='expired',version=version+1 WHERE status='issued' AND expires_at<=now()",
       );
+      await db.query("UPDATE loyalty_rewards SET status='expired' WHERE status='issued' AND expires_at<=now()");
+      await db.query("UPDATE loyalty_programs SET status='ended',enabled=false,version=version+1 WHERE status IN ('active','paused') AND ends_at<=now()");
       await db.query(
         "UPDATE invites SET status='expired',version=version+1 WHERE status IN ('pending','client_confirmed') AND expires_at<=now()",
       );
