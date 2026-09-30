@@ -2,6 +2,7 @@ export interface User {
   id: string;
   displayName: string;
   partnerProgramEnabled: boolean;
+  marketingMessagesEnabled: boolean;
   version: number;
 }
 export interface Membership {
@@ -64,6 +65,69 @@ export interface Salon {
   version: number;
   partnerEnabled: boolean;
   favorite?: boolean;
+  discoveryProfile?: DiscoveryProfile;
+  discoveryDraft?: DiscoveryProfile & { geoStatus?: string };
+  socialLinks?: SalonSocialLink[];
+  location?: { latitude: number; longitude: number; address: string; city: string; district: string; metroStations: string[]; geoStatus: string } | null;
+  rating?: { average: number; count: number } | null;
+  hours?: { weekday: number; intervals: { start: string; end: string }[] }[];
+}
+export interface DiscoveryProfile {
+  shortDescription: string;
+  description: string;
+  showMap: boolean;
+  showHours: boolean;
+  showGallery: boolean;
+  showRating: boolean;
+  showLinks: boolean;
+  address: string;
+  city: string;
+  district: string;
+  metroStations: string[];
+  latitude: number | null;
+  longitude: number | null;
+}
+export interface SalonSocialLink {
+  id?: string;
+  kind: "website" | "max" | "vk" | "telegram" | "instagram" | "tiktok" | "other";
+  url: string;
+  label: string;
+  sortOrder: number;
+  validationStatus?: "pending" | "approved" | "rejected";
+}
+export interface DiscoverySalon {
+  id: string;
+  publicCode: string;
+  name: string;
+  category: string;
+  address: string;
+  shortDescription: string;
+  cover: Media | null;
+  logo: Media | null;
+  minPriceMinor: number | null;
+  matchedServices: string[];
+  onlineBooking: boolean;
+  openNow: boolean;
+  distanceKm: number | null;
+  favorite: boolean;
+  rating: number | null;
+  location: { latitude: number; longitude: number } | null;
+}
+export interface MapCluster {
+  longitude: number;
+  latitude: number;
+  count: number;
+  west: number;
+  east: number;
+  south: number;
+  north: number;
+}
+export interface DiscoveryResponse {
+  items: DiscoverySalon[];
+  clusters: MapCluster[];
+  nextCursor: string | null;
+  totalApprox: number;
+  appliedFilters: Record<string, unknown>;
 }
 export interface Service {
   id: string;

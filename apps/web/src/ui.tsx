@@ -588,12 +588,14 @@ export function CommandButton({
 export function BackLink({
   to,
   label = "Назад",
+  state,
 }: {
   to: string;
   label?: string;
+  state?: unknown;
 }) {
   return (
-    <Link className="back-link" to={to}>
+    <Link className="back-link" to={to} state={state}>
       ← {label}
     </Link>
   );

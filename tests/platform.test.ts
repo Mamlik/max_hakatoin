@@ -198,6 +198,29 @@ beforeAll(async () => {
         "utf8",
       ),
     );
+  if (
+    !(await one(
+      pool,
+      "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='marketing_messages_enabled'",
+    ))
+  )
+    await pool.query(await readFile(new URL("../packages/db/migrations/007_marketing_preferences.sql", import.meta.url), "utf8"));
+  // This migration only adjusts defaults, so it is safe to reapply for a partially prepared local test database.
+  await pool.query(await readFile(new URL("../packages/db/migrations/008_notification_defaults.sql", import.meta.url), "utf8"));
+  if (
+    !(await one(
+      pool,
+      "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='service_notifications_enabled'",
+    ))
+  )
+    await pool.query(await readFile(new URL("../packages/db/migrations/009_global_notification_preferences.sql", import.meta.url), "utf8"));
+  if (
+    !(await one(
+      pool,
+      "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='salon_discovery_profiles'",
+    ))
+  )
+    await pool.query(await readFile(new URL("../packages/db/migrations/010_salon_discovery.sql", import.meta.url), "utf8"));
   app = await createApp();
 });
 beforeEach(async () => {
@@ -277,6 +300,82 @@ describe("booking and access invariants on PostgreSQL", () => {
     expect(second.data.items).toHaveLength(1);
     expect(second.data.items[0]?.id).not.toBe(first.data.items[0]?.id);
   });
+  it("paginates the unified salon catalog with a stable cursor", async () => {
+    const first = await req<{
+      items: Array<{ id: string; publicCode: string }>;
+      nextCursor: string | null;
+      totalApprox: number;
+    }>("GET", "/api/v1/public/salons/discover?limit=1");
+    expect(first.status).toBe(200);
+    expect(first.data.items).toHaveLength(1);
+    expect(first.data.totalApprox).toBeGreaterThanOrEqual(2);
+    expect(first.data.nextCursor).toBeTruthy();
+    const second = await req<{
+      items: Array<{ id: string; publicCode: string }>;
+      nextCursor: string | null;
+    }>("GET", `/api/v1/public/salons/discover?limit=1&cursor=${encodeURIComponent(first.data.nextCursor!)}`);
+    expect(second.status).toBe(200);
+    expect(second.data.items).toHaveLength(1);
+    expect(second.data.items[0]?.id).not.toBe(first.data.items[0]?.id);
+    const beyondEnd = Buffer.from(JSON.stringify({ sort: "recommended", metric: null, code: "zzzzzzzz" })).toString("base64url");
+    const emptyPage = await req<{ items: unknown[]; totalApprox: number }>("GET", `/api/v1/public/salons/discover?limit=1&cursor=${encodeURIComponent(beyondEnd)}`);
+    expect(emptyPage.status).toBe(200);
+    expect(emptyPage.data.items).toHaveLength(0);
+    expect(emptyPage.data.totalApprox).toBe(first.data.totalApprox);
+  });
+
+  it("does not expose unapproved salon coordinates or precise address through the profile or map search", async () => {
+    const salonId = f("salon-a");
+    await pool.query("DELETE FROM salon_discovery_profiles WHERE tenant_id=$1", [salonId]);
+    await pool.query("DELETE FROM salon_locations WHERE tenant_id=$1", [salonId]);
+    await pool.query(
+      `INSERT INTO salon_discovery_profiles(tenant_id,draft,published) VALUES($1,$2,$2)`,
+      [salonId, JSON.stringify({ shortDescription: "Тихая студия", description: "Подробно", showMap: false, showHours: true, showGallery: true, showRating: true, showLinks: true, latitude: 55.7558, longitude: 37.6173, address: "Скрытая улица, 99", city: "Москва", district: "Центральный", metroStations: ["Пушкинская"] })],
+    );
+    await pool.query(
+      `INSERT INTO salon_locations(tenant_id,published_latitude,published_longitude,published_address,published_city,published_district,published_metro_stations,published_geo_status)
+       VALUES($1,55.7558,37.6173,'Скрытая улица, 99','Москва','Центральный',ARRAY['Пушкинская'],'verified')`,
+      [salonId],
+    );
+    const profile = await req<Record<string, any>>("GET", "/api/v1/public/salons/line");
+    expect(profile.status).toBe(200);
+    expect(profile.data.address).toBe("Москва, Центральный");
+    expect(profile.data.address).not.toContain("Скрытая улица");
+    expect(profile.data.location).toBeNull();
+    expect(profile.data.discoveryProfile).not.toHaveProperty("latitude");
+    expect(profile.data.discoveryProfile).not.toHaveProperty("longitude");
+    await pool.query("DELETE FROM salon_discovery_profiles WHERE tenant_id=$1", [salonId]);
+    const legacyProfile = await req<Record<string, any>>("GET", "/api/v1/public/salons/line");
+    expect(legacyProfile.data.address).toBe("Москва, Центральный");
+    expect(legacyProfile.data.address).not.toContain("Скрытая улица");
+    expect(legacyProfile.data.location).toBeNull();
+
+    const map = await req<{ items: Array<{ id: string }> }>("GET", "/api/v1/public/salons/discover?mode=map");
+    expect(map.status).toBe(200);
+    expect(map.data.items.map((item) => item.id)).not.toContain(salonId);
+    const exactAddressSearch = await req<{ items: Array<{ id: string }> }>("GET", "/api/v1/public/salons/discover?q=скрытая%20улица");
+    expect(exactAddressSearch.status).toBe(200);
+    expect(exactAddressSearch.data.items.map((item) => item.id)).not.toContain(salonId);
+  });
+
+  it("publishes only moderator-verified map points", async () => {
+    const salonId = f("salon-a");
+    await pool.query("DELETE FROM salon_discovery_profiles WHERE tenant_id=$1", [salonId]);
+    await pool.query("DELETE FROM salon_locations WHERE tenant_id=$1", [salonId]);
+    const published = { shortDescription: "Студия", description: "", showMap: true, showHours: true, showGallery: true, showRating: true, showLinks: false, latitude: 55.7558, longitude: 37.6173, address: "Проверенная улица, 12", city: "Москва", district: "Центральный", metroStations: [] };
+    await pool.query("INSERT INTO salon_discovery_profiles(tenant_id,draft,published) VALUES($1,$2,$2)", [salonId, JSON.stringify(published)]);
+    await pool.query(
+      `INSERT INTO salon_locations(tenant_id,published_latitude,published_longitude,published_address,published_city,published_district,published_geo_status)
+       VALUES($1,55.7558,37.6173,'Проверенная улица, 12','Москва','Центральный','verified')`, [salonId]);
+    const visible = await req<{ items: Array<{ id: string; location: { latitude: number; longitude: number } }> }>("GET", "/api/v1/public/salons/discover?mode=map");
+    expect(visible.status).toBe(200);
+    expect(visible.data.items.map((item) => item.id)).toContain(salonId);
+    expect(visible.data.items.find((item) => item.id === salonId)?.location).toEqual({ latitude: 55.7558, longitude: 37.6173 });
+    await pool.query("UPDATE salon_locations SET published_geo_status='pending' WHERE tenant_id=$1", [salonId]);
+    const hidden = await req<{ items: Array<{ id: string }> }>("GET", "/api/v1/public/salons/discover?mode=map");
+    expect(hidden.data.items.map((item) => item.id)).not.toContain(salonId);
+  });
+
   it("returns published salon media in the familiar salons carousel", async () => {
     const client = await login();
     const salonId = f("salon-a");

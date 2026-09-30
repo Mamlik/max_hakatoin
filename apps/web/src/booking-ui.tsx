@@ -44,6 +44,7 @@ export function BookingForm({
   const { t, code, id } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const [wizardStep, setWizardStep] = useState(params.get("service") ? 2 : 1);
   const prefix = work ? `/work/${t}` : "/me";
   const old = useApi<Booking>(reschedule ? `${prefix}/bookings/${id}` : null);
   const options = useApi<Catalog & { salon: Salon }>(
@@ -85,6 +86,7 @@ export function BookingForm({
       setVoucherId(old.data.appliedVoucherId ?? "");
       setRewardId(old.data.loyaltyRewardId ?? "");
       setPromotionId(old.data.promotionVersionId??'');
+      setWizardStep(2);
     }
   }, [old.data?.id]);
   const vouchers = useApi<Items<Voucher>>(
@@ -183,6 +185,7 @@ export function BookingForm({
       const result = await api<Quote>(path, "POST", body);
       if (generation !== quoteGeneration.current) return;
       setQuote(result);
+      setWizardStep(3);
       setRemoval(removeVoucher);
     } catch (e) {
       if (generation !== quoteGeneration.current) return;
@@ -234,7 +237,7 @@ export function BookingForm({
       setBusy(false);
     }
   }
-  const bookingStep = quote ? 3 : serviceId ? 2 : 1;
+  const bookingStep = wizardStep;
   return (
     <>
       <BackLink
@@ -280,187 +283,123 @@ export function BookingForm({
           },
         )}
       </ol>
-      <div className="booking-layout">
-        <section className="panel">
-          <div className="step-title">
-            <span>1</span>
-            <h2>Услуга и мастер</h2>
-          </div>
-          {work && !reschedule && (
-            <Field label="Клиент">
-              <select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-              >
-                <option value="">Выберите клиента</option>
-                {customers.data?.items.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.displayName}
-                    {c.userId ? "" : " · ручная карточка"}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-          <Load
-            loading={!(catalog && selectedSalon)}
-            error={options.error || salon.error || publicCatalog.error}
-          >
-            <Field label="Услуга">
-              <select
-                value={serviceId}
-                onChange={(e) => {
-                  setServiceId(e.target.value);
-                  setStaffId("");
-                  if (!old.data?.loyaltyRewardId) setRewardId("");
-                }}
-              >
-                <option value="">Выберите услугу</option>
-                {catalog?.services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} · {s.durationMin} мин · {money(s.priceMinor)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Мастер">
-              <select
-                value={staffId}
-                onChange={(e) => setStaffId(e.target.value)}
-                disabled={!serviceId}
-              >
-                <option value="">Любой доступный</option>
-                {availableStaff?.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Награда программы (необязательно)">
-              <select
-                value={rewardId}
-                disabled={!!old.data?.loyaltyRewardId}
-                onChange={(e) => {
-                  setRewardId(e.target.value);
-                  if (e.target.value){setVoucherId("");setPromotionId('');}
-                }}
-              >
-                <option value="">Обычная запись</option>
-                {old.data?.loyaltyRewardId && (
-                  <option value={old.data.loyaltyRewardId}>
-                    Сохранить бесплатное посещение
-                  </option>
-                )}
-                {availableRewards.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.serviceName} · {r.rewardType==='fixed'?`−${money(r.fixedDiscountMinor)}`:r.rewardType==='percent'?`−${r.discountPercent}%`:`${r.remainingVisits} бесплатн. посещ.`}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {(rewards.error || customerRewards.error) && (
-              <p role="alert">{rewards.error || customerRewards.error}</p>
-            )}
-            <Field label="Купон (необязательно)">
-              <select
-                disabled={!!rewardId||!!promotionId}
-                value={voucherId}
-                onChange={(e) => {setVoucherId(e.target.value);if(e.target.value){setRewardId('');setPromotionId('');}}}
-              >
-                <option value="">Без купона</option>
-                {old.data?.appliedVoucherId && (
-                  <option value={old.data.appliedVoucherId}>
-                    Сохранить купон текущего визита
-                  </option>
-                )}
-                {vouchers.data?.items
-                  .filter(
-                    (v) =>
-                      (v.rewardType!=='free_visits'||(v.remainingVisits??0)>v.reservedVisits) &&
-                      (!v.targetTenantId || v.targetTenantId === selectedSalon?.id),
-                  )
-                  .map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.rewardType==='percent'?`−${v.discountPercent}%`:v.rewardType==='free_visits'?`${v.remainingVisits} бесплатн. посещ.`:`−${money(v.discountMinor)}`} · {v.expiresAt?`до ${dateTime(v.expiresAt)}`:'без срока'}
-                    </option>
-                  ))}
-              </select>
-            </Field>
-            <Field label="Временная акция (необязательно)"><select value={promotionId} disabled={!!rewardId||!!voucherId} onChange={e=>{setPromotionId(e.target.value);if(e.target.value){setRewardId('');setVoucherId('');}}}><option value="">Без акции</option>{promotions.data?.items.filter(v=>v.providerTenantId===selectedSalon?.id&&v.serviceIds.includes(serviceId)).map(v=><option key={v.id} value={v.id}>{v.title} · {v.discountType==='percent'?`−${v.discountPercent}%`:`−${money(v.fixedDiscountMinor)}`}</option>)}</select></Field>
-          </Load>
-          <div className="step-title">
-            <span>2</span>
-            <h2>Дата и время</h2>
-          </div>
-          <Field
-            label={`Дата · ${selectedSalon?.timezone ?? "часовой пояс салона"}`}
-          >
-            <input
-              type="date"
-              value={date}
-              min={dayISO()}
-              max={dayISO(30)}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </Field>
-          {serviceId ? (
-            <Load {...slots}>
-              {slots.data?.items.length ? (
-                <div className="slots-grid">
-                  {slots.data.items.map((s) => (
-                    <button
-                      key={`${s.startAt}:${s.staffId}`}
-                      disabled={busy || (work && !reschedule && !customerId)}
-                      className={
-                        selectedSlot?.startAt === s.startAt &&
-                        selectedSlot?.staffId === s.staffId
-                          ? "selected"
-                          : ""
-                      }
-                      onClick={() => void getQuote(s)}
-                    >
-                      <strong>
-                        {new Date(s.startAt).toLocaleTimeString("ru-RU", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          timeZone: selectedSalon?.timezone ?? "Europe/Moscow",
-                        })}
-                      </strong>
-                      {!staffId && <small>{s.staffName}</small>}
+      <div className={`booking-layout booking-layout-step-${wizardStep}`}>
+        {wizardStep !== 3 && <section className="panel">
+          {wizardStep === 1 && (
+            <>
+              <div className="step-title">
+                <span>1</span>
+                <div><h2>Выберите услугу</h2><p>Сначала услуга, затем мастер и время.</p></div>
+              </div>
+              {work && !reschedule && (
+                <Field label="Клиент">
+                  <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                    <option value="">Выберите клиента</option>
+                    {customers.data?.items.map((c) => <option key={c.id} value={c.id}>{c.displayName}{c.userId ? "" : " · ручная карточка"}</option>)}
+                  </select>
+                </Field>
+              )}
+              <Load loading={!(catalog && selectedSalon)} error={options.error || salon.error || publicCatalog.error}>
+                {catalog?.services.length ? <div className="booking-service-options" role="group" aria-label="Выберите услугу">
+                  {catalog.services.map((service) => (
+                    <button key={service.id} type="button" className={serviceId === service.id ? "booking-choice selected" : "booking-choice"} aria-pressed={serviceId === service.id} onClick={() => {
+                      setServiceId(service.id);
+                      setStaffId("");
+                      setQuote(undefined);
+                      if (!old.data?.loyaltyRewardId) setRewardId("");
+                      setPromotionId("");
+                    }}>
+                      <span><strong>{service.name}</strong>{service.description && <small>{service.description}</small>}<small>{service.durationMin} минут</small></span>
+                      <span className="booking-choice-price">{money(service.priceMinor)}</span>
                     </button>
                   ))}
-                </div>
-              ) : availableStaff && !availableStaff.length ? (
-                // No master provides this service, so no date will ever have slots.
-                <Empty
-                  title="Услугу пока некому оказывать"
-                  text="Салон ещё не назначил мастера на эту услугу. Выберите другую услугу или свяжитесь с салоном."
-                />
-              ) : (
-                <Empty
-                  title="Нет свободных интервалов"
-                  text="Попробуйте другой день или другого мастера."
-                />
-              )}
-              {!work && selectedSalon && serviceId && (
-                <div className="hint-row">
-                  <Icon name="bell" />
-                  <span>Не нашли удобное время?</span>
-                  <Link to={`/me/waitlist/new?code=${encodeURIComponent(selectedSalon.publicCode)}&service=${serviceId}${staffId ? `&staff=${staffId}` : ""}`}>
-                    Сообщить, если освободится
-                  </Link>
-                </div>
-              )}
-            </Load>
-          ) : (
-            <p className="muted">Сначала выберите услугу.</p>
+                </div> : <Empty title="Услуг пока нет" text="Салон ещё не добавил услуги для онлайн-записи." />}
+                {serviceId && (
+                  <>
+                    <div className="booking-substep-heading"><h3>Мастер</h3><span>Можно выбрать позже</span></div>
+                    <div className="booking-staff-options" role="group" aria-label="Выберите мастера">
+                      <button type="button" className={!staffId ? "selected" : ""} aria-pressed={!staffId} onClick={() => setStaffId("")}>Любой доступный</button>
+                      {availableStaff?.map((member) => <button key={member.id} type="button" className={staffId === member.id ? "selected" : ""} aria-pressed={staffId === member.id} onClick={() => setStaffId(member.id)}>{member.name}</button>)}
+                    </div>
+                    <details className="booking-extras">
+                      <summary>Есть купон или бонус?</summary>
+                      <Field label="Бесплатное посещение">
+                        <select value={rewardId} disabled={!!old.data?.loyaltyRewardId} onChange={(e) => { setRewardId(e.target.value); if (e.target.value) { setVoucherId(""); setPromotionId(""); } }}>
+                          <option value="">Обычная запись</option>
+                          {old.data?.loyaltyRewardId && <option value={old.data.loyaltyRewardId}>Сохранить бесплатное посещение</option>}
+                          {availableRewards.map((reward) => <option key={reward.id} value={reward.id}>{reward.serviceName} · {reward.rewardType === "fixed" ? `−${money(reward.fixedDiscountMinor)}` : reward.rewardType === "percent" ? `−${reward.discountPercent}%` : `${reward.remainingVisits} бесплатн. посещ.`}</option>)}
+                        </select>
+                      </Field>
+                      {(rewards.error || customerRewards.error) && <p role="alert">{rewards.error || customerRewards.error}</p>}
+                      <Field label="Купон">
+                        <select disabled={!!rewardId || !!promotionId} value={voucherId} onChange={(e) => { setVoucherId(e.target.value); if (e.target.value) setPromotionId(""); }}>
+                          <option value="">Без купона</option>
+                          {old.data?.appliedVoucherId && <option value={old.data.appliedVoucherId}>Сохранить купон текущего визита</option>}
+                          {vouchers.data?.items.filter((voucher) => (voucher.rewardType !== "free_visits" || (voucher.remainingVisits ?? 0) > voucher.reservedVisits) && (!voucher.targetTenantId || voucher.targetTenantId === selectedSalon?.id)).map((voucher) => <option key={voucher.id} value={voucher.id}>{voucher.rewardType === "percent" ? `−${voucher.discountPercent}%` : voucher.rewardType === "free_visits" ? `${voucher.remainingVisits} бесплатн. посещ.` : `−${money(voucher.discountMinor)}`} · {voucher.expiresAt ? `до ${dateTime(voucher.expiresAt)}` : "без срока"}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Временная акция">
+                        <select value={promotionId} disabled={!!rewardId || !!voucherId} onChange={(event) => { setPromotionId(event.target.value); if (event.target.value) { setRewardId(""); setVoucherId(""); } }}>
+                          <option value="">Без акции</option>
+                          {promotions.data?.items.filter((promotion) => promotion.providerTenantId === selectedSalon?.id && promotion.serviceIds.includes(serviceId)).map((promotion) => <option key={promotion.id} value={promotion.id}>{promotion.title} · {promotion.discountType === "percent" ? `−${promotion.discountPercent}%` : `−${money(promotion.fixedDiscountMinor)}`}</option>)}
+                        </select>
+                      </Field>
+                    </details>
+                  </>
+                )}
+              </Load>
+              <button className="button primary full booking-next" type="button" disabled={!serviceId || (work && !reschedule && !customerId)} onClick={() => setWizardStep(2)}>Дальше: дата и время <Icon name="arrow" size={16} /></button>
+            </>
           )}
-        </section>
-        <aside className="panel booking-summary">
+          {wizardStep === 2 && (
+            <>
+              <div className="step-title">
+                <span>2</span>
+                <div><h2>Дата и время</h2><p>{catalog?.services.find((service) => service.id === serviceId)?.name} · {staffId ? availableStaff?.find((member) => member.id === staffId)?.name : "любой мастер"}</p></div>
+              </div>
+              <div className="booking-step-actions">
+                <button type="button" className="button secondary compact" onClick={() => { setQuote(undefined); setWizardStep(1); }}>Изменить услугу</button>
+              </div>
+              {error && <div className="notice error" role="alert">{error}</div>}
+              <Field label={`Дата · ${selectedSalon?.timezone ?? "часовой пояс салона"}`}>
+                <input type="date" value={date} min={dayISO()} max={dayISO(30)} onChange={(e) => setDate(e.target.value)} />
+              </Field>
+              {serviceId ? (
+                <Load {...slots}>
+                  {slots.data?.items.length ? (
+                    <>
+                      <p className="booking-availability-label">Свободное время</p>
+                      <div className="slots-grid">
+                        {slots.data.items.map((slot) => (
+                          <button key={`${slot.startAt}:${slot.staffId}`} disabled={busy || (work && !reschedule && !customerId)} className={selectedSlot?.startAt === slot.startAt && selectedSlot?.staffId === slot.staffId ? "selected" : ""} onClick={() => void getQuote(slot)}>
+                            <strong>{new Date(slot.startAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: selectedSalon?.timezone ?? "Europe/Moscow" })}</strong>
+                            {!staffId && <small>{slot.staffName}</small>}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : availableStaff && !availableStaff.length ? (
+                    <Empty title="Услугу пока некому оказывать" text="Салон ещё не назначил мастера на эту услугу. Выберите другую услугу или свяжитесь с салоном." />
+                  ) : (
+                    <Empty title="На этот день свободного времени нет" text="Выберите другую дату или другого мастера." />
+                  )}
+                  {!work && selectedSalon && serviceId && (
+                    <div className="hint-row"><Icon name="bell" /><span>Не нашли удобное время?</span><Link to={`/me/waitlist/new?code=${encodeURIComponent(selectedSalon.publicCode)}&service=${serviceId}${staffId ? `&staff=${staffId}` : ""}`}>Сообщить, если освободится</Link></div>
+                  )}
+                </Load>
+              ) : <p className="muted">Сначала выберите услугу.</p>}
+              {removal && !quote && selectedSlot && <button className="button secondary" disabled={busy} onClick={() => void getQuote(selectedSlot, true)}>Показать новую цену без купона</button>}
+            </>
+          )}
+        </section>}
+        {wizardStep === 3 && <aside className="panel booking-summary">
           <div className="step-title">
             <span>3</span>
-            <h2>Всё верно?</h2>
+            <div><h2>Подтвердите запись</h2><p>Проверьте дату, мастера и итоговую стоимость.</p></div>
+          </div>
+          <div className="booking-step-actions">
+            <button type="button" className="button secondary compact" onClick={() => { setQuote(undefined); setWizardStep(2); }}>Изменить время</button>
+            <button type="button" className="button secondary compact" onClick={() => { setQuote(undefined); setWizardStep(1); }}>Изменить услугу</button>
           </div>
           {quote ? (
             <>
@@ -541,6 +480,7 @@ export function BookingForm({
                     setQuote(undefined);
                     setChallenge("");
                     setError("");
+                    setWizardStep(2);
                   }}
                 >
                   Выбрать другое время
@@ -563,7 +503,7 @@ export function BookingForm({
             Сообщения и партнёрские предложения включаются отдельно в{" "}
             <Link to="/me/profile">профиле</Link>.
           </p>
-        </aside>
+        </aside>}
       </div>
     </>
   );

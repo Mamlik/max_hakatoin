@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Link,
   useNavigate,
   useParams,
   useSearchParams,
+  useLocation,
 } from "react-router-dom";
 import { api, useApi, useAuth, refreshData, currentSession } from "./api";
 import { PromotionCards } from './promotions-ui';
 import { normalizeStyle } from "./storefront-style";
 import { storefrontTokenStyle } from "./storefront-tokens";
+import { ThemeModePicker, useColorMode } from "./theme";
 import {
   PageTitle,
   Modal,
@@ -29,6 +31,8 @@ import {
   TimezonePicker,
   timezoneLabel,
 } from "./ui";
+import { DiscoveryMap } from "./discovery-map";
+import type { MapBounds } from "./map-adapter";
 import type {
   Booking,
   Salon,
@@ -39,8 +43,15 @@ import type {
   Voucher,
   Revocation,
   Media,
+  DiscoveryResponse,
+  DiscoverySalon,
+  SalonSocialLink,
 } from "./types";
 export { BookingForm, BookingPage } from "./booking-ui";
+// Kept only in page memory after the user explicitly requests nearby search.
+// Coordinates never enter a URL, local storage, or navigation state.
+let ephemeralDiscoveryPoint: { latitude: number; longitude: number } | null = null;
+const EMPTY_DISCOVERY_RESULTS: DiscoverySalon[] = [];
 
 export function BookingCard({
   booking: b,
@@ -223,6 +234,7 @@ export function SalonCard({ salon: s }: { salon: Salon }) {
         <div>
           <h3>{s.name}</h3>
           <p>{s.address ?? "Откройте витрину салона"}</p>
+          <small className="salon-card-category">{s.category}</small>
         </div>
         <span className="circle-arrow">
           <Icon name="arrow" size={16} />
@@ -232,69 +244,352 @@ export function SalonCard({ salon: s }: { salon: Salon }) {
   );
 }
 export function DiscoverPage() {
-  const [query, setQuery] = useState("");
-  const [showCatalog, setShowCatalog] = useState(false);
-  const search = query.trim();
-  const [extra, setExtra] = useState<Salon[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>();
-  const more = useAction();
-  const searchKey = `${search}:${showCatalog}`;
-  const currentSearch = useRef(searchKey);
-  currentSearch.current = searchKey;
-  const publicData = useApi<Items<Salon>>(
-    search || showCatalog ? `/public/salons?query=${encodeURIComponent(search)}` : null,
-  );
   const mine = useApi<Items<Salon>>("/me/salons");
-  useEffect(() => { setExtra([]); setNextCursor(undefined); }, [searchKey, publicData.data]);
-  const familiar = [...(mine.data?.items ?? [])].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite));
-  const discover = [...(publicData.data?.items ?? []), ...extra];
-  const cursor = nextCursor === undefined ? publicData.data?.nextCursor : nextCursor;
-  const loadMore = () => more.run(async () => {
-    const key = searchKey;
-    const result = await api<Items<Salon>>(`/public/salons?query=${encodeURIComponent(search)}&cursor=${encodeURIComponent(cursor!)}`);
-    if (currentSearch.current !== key) return;
-    setExtra(items => [...items, ...result.items.filter(item => !items.some(existing => existing.id === item.id))]);
-    setNextCursor(result.nextCursor);
-  }, '', false);
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const [queryInput, setQueryInput] = useState(searchParams.get("q") ?? "");
+  const [minPriceInput, setMinPriceInput] = useState(searchParams.get("minPriceMinor") ? String(Number(searchParams.get("minPriceMinor")) / 100) : "");
+  const [maxPriceInput, setMaxPriceInput] = useState(searchParams.get("maxPriceMinor") ? String(Number(searchParams.get("maxPriceMinor")) / 100) : "");
+  const [nearby, setNearby] = useState<{ latitude: number; longitude: number } | null>(() => ephemeralDiscoveryPoint);
+  const [geoError, setGeoError] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [pendingBounds, setPendingBounds] = useState<MapBounds | null>(null);
+  const [pendingZoom, setPendingZoom] = useState(11);
+  const [selected, setSelected] = useState<DiscoverySalon | null>(null);
+  const [extraItems, setExtraItems] = useState<DiscoverySalon[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [moreError, setMoreError] = useState("");
+  const [moreLoading, setMoreLoading] = useState(false);
+  const cardRefs = useRef(new Map<string, HTMLElement>());
+  const configData = useApi<{ salonDiscovery?: { mapEnabled?: boolean; mapStyleLight?: string; mapStyleDark?: string } }>("/config");
+  const facets = useApi<{
+    categories: { name: string; count: number }[];
+    cities: { name: string; count: number }[];
+    districts: { name: string; count: number }[];
+    metroStations: { name: string; count: number }[];
+    services: { id: string; name: string; salonCount: number }[];
+  }>("/public/salons/discover/facets");
+  const mode = searchParams.get("mode") === "map" ? "map" : "list";
+  const apiParams = new URLSearchParams(searchParams);
+  apiParams.set("mode", mode);
+  apiParams.delete("selected");
+  apiParams.delete("cursor");
+  if (nearby) {
+    apiParams.set("lat", String(nearby.latitude));
+    apiParams.set("lng", String(nearby.longitude));
+  } else {
+    apiParams.delete("lat");
+    apiParams.delete("lng");
+    apiParams.delete("radiusKm");
+    if (apiParams.get("sort") === "nearby") apiParams.delete("sort");
+  }
+  const path = `/public/salons/discover?${apiParams.toString()}`;
+  const publicData = useApi<DiscoveryResponse>(path);
+  useEffect(() => {
+    setExtraItems([]);
+    setMoreError("");
+    setNextCursor(null);
+  }, [path]);
+  const urlQuery = searchParams.get("q") ?? "";
+  useEffect(() => setQueryInput(urlQuery), [urlQuery]);
+  useEffect(() => {
+    setMinPriceInput(searchParams.get("minPriceMinor") ? String(Number(searchParams.get("minPriceMinor")) / 100) : "");
+    setMaxPriceInput(searchParams.get("maxPriceMinor") ? String(Number(searchParams.get("maxPriceMinor")) / 100) : "");
+  }, [searchParams.get("minPriceMinor"), searchParams.get("maxPriceMinor")]);
+  useEffect(() => {
+    if (!nearby && (searchParams.has("radiusKm") || searchParams.get("sort") === "nearby")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("radiusKm");
+      if (next.get("sort") === "nearby") next.delete("sort");
+      setSearchParams(next, { replace: true });
+    }
+  }, [nearby]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const current = searchParams.get("q") ?? "";
+      if (current === queryInput.trim()) return;
+      const next = new URLSearchParams(searchParams);
+      if (queryInput.trim()) next.set("q", queryInput.trim()); else next.delete("q");
+      next.delete("selected");
+      next.delete("cursor");
+      setSearchParams(next, { replace: true });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [queryInput, searchParams, setSearchParams]);
+  const updateParam = (key: string, value: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set(key, value); else next.delete(key);
+    if (key !== "mode" && key !== "selected") next.delete("selected");
+    next.delete("cursor");
+    if (key !== "mode" && key !== "selected") setSelected(null);
+    setSearchParams(next);
+  };
+  const requestLocation = () => {
+    setGeoError("");
+    if (!navigator.geolocation) { setGeoError("Это устройство не передаёт геопозицию браузеру."); return; }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const point = { latitude: coords.latitude, longitude: coords.longitude };
+        ephemeralDiscoveryPoint = point;
+        setNearby(point);
+        const next = new URLSearchParams(searchParams);
+        next.delete("selected");
+        next.set("radiusKm", next.get("radiusKm") || "5");
+        next.set("sort", "nearby");
+        setSearchParams(next);
+        setSelected(null);
+      },
+      () => setGeoError("Не удалось получить геопозицию. Разрешите доступ или выберите город вручную."),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+    );
+  };
+  const clearLocation = () => {
+    ephemeralDiscoveryPoint = null;
+    setNearby(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete("radiusKm"); next.delete("sort"); next.delete("viewport");
+    next.delete("selected");
+    setSearchParams(next);
+    setSelected(null);
+  };
+  const commitPrice = (key: "minPriceMinor" | "maxPriceMinor", value: string) => {
+    const amount = value.trim() ? Number(value) : NaN;
+    if (value.trim() && (!Number.isFinite(amount) || amount < 0 || amount > 1000000)) return;
+    updateParam(key, value.trim() ? String(Math.round(amount * 100)) : "");
+  };
+  const clearFilters = () => {
+    const next = new URLSearchParams();
+    next.set("mode", mode);
+    setSearchParams(next);
+    setQueryInput("");
+    ephemeralDiscoveryPoint = null;
+    setNearby(null);
+  };
+  const clearPriceFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("minPriceMinor");
+    next.delete("maxPriceMinor");
+    next.delete("cursor");
+    next.delete("selected");
+    setSelected(null);
+    setSearchParams(next);
+  };
+  const discover = publicData.data?.items ?? EMPTY_DISCOVERY_RESULTS;
+  const items = useMemo(() => [...discover, ...extraItems], [discover, extraItems]);
+  const selectedCode = searchParams.get("selected");
+  useEffect(() => {
+    if (!selectedCode) { setSelected(null); return; }
+    const salon = items.find((item) => item.publicCode === selectedCode);
+    if (salon) setSelected(salon);
+  }, [selectedCode, publicData.data, extraItems]);
+  useEffect(() => {
+    if (mode !== "map" || !selected?.id) return;
+    cardRefs.current.get(selected.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [mode, selected?.id]);
+  const hasActiveFilters = ["categories", "serviceIds", "city", "district", "metroIds", "minPriceMinor", "maxPriceMinor", "radiusKm", "openNow", "onlineBooking", "favoritesOnly"].some((key) => searchParams.has(key)) || !!nearby;
+  const selectedValues = (key: string) => (searchParams.get(key) ?? "").split(",").filter(Boolean);
+  const toggleListFilter = (key: string, value: string, checked: boolean) => {
+    const next = new URLSearchParams(searchParams);
+    const values = new Set((next.get(key) ?? "").split(",").filter(Boolean));
+    if (checked) values.add(value); else values.delete(value);
+    if (values.size) next.set(key, [...values].join(",")); else next.delete(key);
+    next.delete("cursor");
+    setSearchParams(next);
+  };
+  const multiFilter = (key: string, title: string, options: Array<{ value: string; label: string }>) => {
+    const selected = selectedValues(key);
+    return <details className="discovery-multi-filter">
+      <summary>{title}{selected.length ? ` · ${selected.length}` : ""}</summary>
+      <div className="discovery-multi-options">
+        {options.map((option) => <label key={option.value}>
+          <input type="checkbox" checked={selected.includes(option.value)} onChange={(event) => toggleListFilter(key, option.value, event.target.checked)} />
+          <span>{option.label}</span>
+        </label>)}
+        {!options.length && <span className="muted">В этом каталоге пока нет вариантов</span>}
+      </div>
+    </details>;
+  };
+  const activeChips: Array<{ key: string; label: string; clear: () => void }> = [];
+  if (searchParams.get("q")) activeChips.push({ key: "q", label: `Поиск: ${searchParams.get("q")}`, clear: () => updateParam("q", "") });
+  if (selectedValues("categories").length) activeChips.push({ key: "categories", label: `Направления · ${selectedValues("categories").length}`, clear: () => updateParam("categories", "") });
+  if (searchParams.get("city")) activeChips.push({ key: "city", label: searchParams.get("city")!, clear: () => updateParam("city", "") });
+  if (searchParams.get("district")) activeChips.push({ key: "district", label: searchParams.get("district")!, clear: () => updateParam("district", "") });
+  if (selectedValues("metroIds").length) activeChips.push({ key: "metroIds", label: `Метро · ${selectedValues("metroIds").length}`, clear: () => updateParam("metroIds", "") });
+  if (selectedValues("serviceIds").length) activeChips.push({ key: "serviceIds", label: `Услуги · ${selectedValues("serviceIds").length}`, clear: () => updateParam("serviceIds", "") });
+  if (searchParams.has("minPriceMinor") || searchParams.has("maxPriceMinor")) activeChips.push({ key: "price", label: "Цена", clear: clearPriceFilters });
+  if (nearby) activeChips.push({ key: "nearby", label: `Рядом · ${searchParams.get("radiusKm") ?? 5} км`, clear: clearLocation });
+  if (searchParams.get("openNow") === "true") activeChips.push({ key: "openNow", label: "Открыто сейчас", clear: () => updateParam("openNow", "") });
+  if (searchParams.get("onlineBooking") === "true") activeChips.push({ key: "onlineBooking", label: "Онлайн-запись", clear: () => updateParam("onlineBooking", "") });
+  if (searchParams.get("favoritesOnly") === "true") activeChips.push({ key: "favoritesOnly", label: "Избранное", clear: () => updateParam("favoritesOnly", "") });
+  if (searchParams.has("viewport")) activeChips.push({ key: "viewport", label: "Область карты", clear: () => { const next = new URLSearchParams(searchParams); next.delete("viewport"); next.delete("zoom"); setSearchParams(next); } });
+  const filters = (
+    <div className="discovery-filter-grid">
+      {multiFilter("categories", "Направления", facets.data?.categories.map((item) => ({ value: item.name, label: `${item.name} · ${item.count}` })) ?? [])}
+      <label className="field"><span>Город</span>
+        <select value={searchParams.get("city") ?? ""} onChange={(event) => updateParam("city", event.target.value)}>
+          <option value="">Все города</option>
+          {facets.data?.cities.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
+        </select>
+      </label>
+      <label className="field"><span>Район</span>
+        <select value={searchParams.get("district") ?? ""} onChange={(event) => updateParam("district", event.target.value)}>
+          <option value="">Любой район</option>
+          {facets.data?.districts.map((item) => <option key={item.name} value={item.name}>{item.name} · {item.count}</option>)}
+        </select>
+      </label>
+      {multiFilter("metroIds", "Метро", facets.data?.metroStations.map((item) => ({ value: item.name, label: `${item.name} · ${item.count}` })) ?? [])}
+      {multiFilter("serviceIds", "Услуги", facets.data?.services.map((item) => ({ value: item.id, label: item.name })) ?? [])}
+      <label className="field"><span>Сортировка</span>
+        <select value={searchParams.get("sort") ?? "recommended"} onChange={(event) => updateParam("sort", event.target.value)}>
+          <option value="recommended">Сначала подходящие</option>
+          {nearby && <option value="nearby">Сначала ближайшие</option>}
+          <option value="cheaper">Сначала дешевле</option>
+          <option value="expensive">Сначала дороже</option>
+          <option value="name">По названию</option>
+        </select>
+      </label>
+      <label className="field"><span>Цена от, ₽</span><input type="number" min="0" max="1000000" inputMode="numeric" value={minPriceInput} onChange={(event) => setMinPriceInput(event.target.value)} onBlur={() => commitPrice("minPriceMinor", minPriceInput)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
+      <label className="field"><span>Цена до, ₽</span><input type="number" min="0" max="1000000" inputMode="numeric" value={maxPriceInput} onChange={(event) => setMaxPriceInput(event.target.value)} onBlur={() => commitPrice("maxPriceMinor", maxPriceInput)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
+      {nearby && <label className="field"><span>Радиус</span>
+        <select value={searchParams.get("radiusKm") ?? "5"} onChange={(event) => updateParam("radiusKm", event.target.value)}>
+          {[1, 3, 5, 10, 25].map((value) => <option key={value} value={value}>{value} км</option>)}
+        </select>
+      </label>}
+      <label className="discovery-check"><input type="checkbox" checked={searchParams.get("openNow") === "true"} onChange={(event) => updateParam("openNow", event.target.checked ? "true" : "")} /><span>Открыто сейчас</span></label>
+      <label className="discovery-check"><input type="checkbox" checked={searchParams.get("onlineBooking") === "true"} onChange={(event) => updateParam("onlineBooking", event.target.checked ? "true" : "")} /><span>Можно записаться онлайн</span></label>
+      {auth.me && <label className="discovery-check"><input type="checkbox" checked={searchParams.get("favoritesOnly") === "true"} onChange={(event) => updateParam("favoritesOnly", event.target.checked ? "true" : "")} /><span>Только избранное</span></label>}
+      {nearby && <div className="discovery-nearby-control"><span>Рядом с вами · геопозиция используется только для этого поиска</span><button type="button" className="text-button" onClick={clearLocation}>Сбросить</button></div>}
+    </div>
+  );
+  const salonLocationState = { from: `${location.pathname}${location.search}` };
+  const selectSalon = (salon: DiscoverySalon) => {
+    navigate(`/s/${salon.publicCode}`, { state: salonLocationState });
+  };
+  const openSalon = (salon: DiscoverySalon) => <Link className="button primary" to={`/s/${salon.publicCode}`} state={salonLocationState}>О салоне <Icon name="arrow" size={16} /></Link>;
+  const card = (salon: DiscoverySalon) => (
+    <article ref={(element) => { if (element) cardRefs.current.set(salon.id, element); else cardRefs.current.delete(salon.id); }} className={`discovery-card${selected?.id === salon.id ? " selected" : ""}`} key={salon.id}>
+      <Link className="discovery-card-cover" to={`/s/${salon.publicCode}`} state={salonLocationState} aria-label={`Открыть салон «${salon.name}»`}>
+        {salon.cover && <Asset tenantId={salon.id} media={salon.cover} alt="" />}
+        {!salon.cover && <span aria-hidden="true">{salon.name.slice(0, 1)}</span>}
+        <small>{salon.category}</small>
+      </Link>
+      <div className="discovery-card-body">
+        <div className="discovery-card-heading"><h3>{salon.name}</h3>{salon.rating !== null && <span aria-label={`Рейтинг ${salon.rating} из 5`}>★ {salon.rating.toLocaleString("ru-RU")}</span>}</div>
+        <p>{salon.shortDescription || salon.address}</p>
+        <div className="discovery-card-meta">
+          {salon.openNow && <span className="discovery-open">Открыто</span>}
+          {salon.onlineBooking && <span>Онлайн-запись</span>}
+          {salon.distanceKm !== null && <span>{salon.distanceKm < 1 ? `${Math.round(salon.distanceKm * 1000)} м` : `${salon.distanceKm.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} км`}</span>}
+          {salon.matchedServices?.length > 0 && <span>{salon.matchedServices.slice(0, 2).join(" · ")}</span>}
+        </div>
+        <div className="discovery-card-footer">
+          <strong>{salon.minPriceMinor === null ? "Цены уточняйте" : `от ${money(salon.minPriceMinor)}`}</strong>
+          {mode === "map" && salon.location && <button type="button" className="button secondary discovery-locate-salon" onClick={() => selectSalon(salon)}>На карте</button>}
+          {openSalon(salon)}
+        </div>
+      </div>
+    </article>
+  );
+  const loadMore = async () => {
+    const cursor = nextCursor ?? publicData.data?.nextCursor;
+    if (!cursor || moreLoading) return;
+    setMoreLoading(true); setMoreError("");
+    try {
+      const next = new URLSearchParams(apiParams);
+      next.set("cursor", cursor);
+      const result = await api<DiscoveryResponse>(`/public/salons/discover?${next.toString()}`);
+      setExtraItems((old) => [...old, ...result.items]);
+      setNextCursor(result.nextCursor);
+    } catch (cause) { setMoreError(cause instanceof Error ? cause.message : "Не удалось загрузить салоны"); }
+    finally { setMoreLoading(false); }
+  };
+  const mapEnabled = configData.data?.salonDiscovery?.mapEnabled !== false;
+  const expandedRadius = [1, 3, 5, 10, 25].find((value) => value > Number(searchParams.get("radiusKm") ?? 5));
   return (
     <>
       <PageTitle
-        eyebrow="РЯДОМ · ВАШЕ ВРЕМЯ ДЛЯ СЕБЯ"
-        title="Мои места"
-        description="Знакомые салоны и всё, что связано с ними. Найдите другое место по названию или услуге."
+        eyebrow="КАТАЛОГ ГОРОДСКИХ САЛОНОВ"
+        title="Найти салон"
+        description="Сравните услуги, цены и расположение. Фильтры сохраняются в ссылке."
       />
       <div className="search-box place-search">
         <Icon name="search" />
         <input
           aria-label="Поиск салона"
-          type="search"
-          placeholder="Салон, услуга или ключевое слово"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Салон, услуга или район"
+          value={queryInput}
+          onChange={(e) => setQueryInput(e.target.value)}
         />
+        {!!queryInput && <button type="button" aria-label="Очистить поиск" onClick={() => setQueryInput("")}>×</button>}
       </div>
-      {search || showCatalog ? (
-        <>
-          <div className="section-head">
-            <h2>{search ? "Результаты поиска" : "Каталог салонов"}</h2>
-            <button className="text-button" onClick={() => {setQuery("");setShowCatalog(false);}}>К моим местам</button>
-          </div>
-          <Load {...publicData}>
-            {discover.length ? <div className="salon-grid">{discover.map((s) => <SalonCard key={s.id} salon={s} />)}</div>
-              : <Empty title={search ? "Место не найдено" : "Каталог пока пуст"} text={search ? "Попробуйте другое название, услугу или адрес." : "Новые опубликованные салоны появятся здесь."} />}
-          </Load>
-          {more.feedback}
-          {cursor && <button className="button secondary" disabled={more.busy} onClick={() => void loadMore()}>Показать ещё салоны</button>}
-        </>
-      ) : <Load {...mine}>
-        {familiar.length ? <>
-          <div className="section-head"><h2>Знакомое место</h2></div>
-          <div className="familiar-feature"><SalonCard salon={familiar[0]!} /></div>
-          {familiar.length > 1 && <><div className="section-head"><h2>Остальные мои места</h2></div>
-            <div className="salon-grid">{familiar.slice(1).map((s) => <SalonCard key={s.id} salon={s} />)}</div></>}
-        </> : <Empty title="Здесь появится ваше место" text="Найдите салон по названию или услуге и сохраните его. После визита он тоже появится здесь." />}
-        <button className="button secondary" onClick={() => setShowCatalog(true)}>Открыть каталог салонов</button>
-      </Load>}
+      {!searchParams.get("q") && mode === "list" && !hasActiveFilters && !!mine.data?.items.length && (
+        <section className="familiar-salons">
+          <div className="section-head"><h2>Мои места</h2></div>
+          <div className="salon-grid">{mine.data.items.map((salon) => <SalonCard key={salon.id} salon={salon} />)}</div>
+        </section>
+      )}
+      <div className="discovery-toolbar">
+        <button type="button" className="button secondary" onClick={requestLocation}><Icon name="salons" size={16} />{nearby ? "Геопозиция включена" : "Рядом со мной"}</button>
+        <div className="discovery-view-switch" role="group" aria-label="Режим просмотра">
+          <button type="button" aria-pressed={mode === "list"} onClick={() => updateParam("mode", "list")}>Список</button>
+          <button type="button" aria-pressed={mode === "map"} disabled={!mapEnabled} onClick={() => updateParam("mode", "map")}>Карта</button>
+        </div>
+        <button type="button" className="button secondary discovery-mobile-filter" onClick={() => setFiltersOpen(true)}>Фильтры{hasActiveFilters ? " · включены" : ""}</button>
+      </div>
+      {!!activeChips.length && <div className="discovery-active-filters" aria-label="Активные фильтры">
+        {activeChips.map((chip) => <button type="button" key={chip.key} onClick={chip.clear} aria-label={`Убрать фильтр: ${chip.label}`}>{chip.label}<span aria-hidden="true"> ×</span></button>)}
+        <button type="button" className="discovery-clear-all" onClick={clearFilters}>Сбросить фильтры</button>
+      </div>}
+      {geoError && <div className="notice" role="status">{geoError}</div>}
+      <section className="discovery-filters-desktop" aria-label="Фильтры каталога">{filters}</section>
+      {filtersOpen && <Modal title="Фильтры салонов" onClose={() => setFiltersOpen(false)}><div className="discovery-filter-modal">{filters}<button type="button" className="button primary" onClick={() => setFiltersOpen(false)}>Показать салоны</button></div></Modal>}
+      {mode === "map" && mapEnabled && (
+        <section className="discovery-map-panel" aria-label="Салоны на карте">
+          <DiscoveryMap
+            items={discover}
+            clusters={publicData.data?.clusters}
+            selectedId={selected?.id}
+            userLocation={nearby}
+            styles={{ light: configData.data?.salonDiscovery?.mapStyleLight, dark: configData.data?.salonDiscovery?.mapStyleDark }}
+            onSelect={selectSalon}
+            onViewport={(bounds, zoom) => { setPendingBounds(bounds); setPendingZoom(zoom); }}
+          />
+          {pendingBounds && <button type="button" className="button primary discovery-map-search" onClick={() => {
+            const next = new URLSearchParams(searchParams);
+            next.set("viewport", [pendingBounds.west, pendingBounds.south, pendingBounds.east, pendingBounds.north].map((value) => value.toFixed(5)).join(","));
+            next.set("zoom", String(Math.round(pendingZoom)));
+            next.delete("selected");
+            setSelected(null);
+            setSearchParams(next);
+          }}>Искать в этой области</button>}
+        </section>
+      )}
+      <div className="section-head">
+        <h2>{searchParams.get("q") ? "Результаты поиска" : mode === "map" ? "На карте" : "Салоны поблизости и в городе"}</h2>
+        <span className="muted">{publicData.data ? `${publicData.data.totalApprox.toLocaleString("ru-RU")} ${plural(publicData.data.totalApprox, "салон", "салона", "салонов")}` : "Ищем…"}</span>
+      </div>
+      <Load {...publicData}>
+        {items.length ? <div className="discovery-results">{items.map(card)}</div> : (
+          <Empty
+            title={searchParams.get("q") ? "Ничего не нашлось" : hasActiveFilters ? "Подходящих салонов нет" : mode === "map" ? "На карте пока пусто" : "Пока нет опубликованных салонов"}
+            text={mode === "map" && !searchParams.get("q")
+              ? "Здесь отображаются салоны с опубликованной точкой на карте. Переключитесь на список или измените фильтры."
+              : "Измените фильтры или попробуйте другое название, услугу либо район."}
+            action={mode === "map" || hasActiveFilters ? <div className="discovery-empty-actions">
+              {mode === "map" && <button type="button" className="button secondary" onClick={() => updateParam("mode", "list")}>Показать списком</button>}
+              {nearby && expandedRadius && <button type="button" className="button secondary" onClick={() => updateParam("radiusKm", String(expandedRadius))}>Увеличить радиус до {expandedRadius} км</button>}
+              {(searchParams.has("minPriceMinor") || searchParams.has("maxPriceMinor")) && <button type="button" className="button secondary" onClick={clearPriceFilters}>Очистить цену</button>}
+              {hasActiveFilters && <button type="button" className="button secondary" onClick={clearFilters}>Сбросить фильтры</button>}
+            </div> : undefined}
+          />
+        )}
+      </Load>
+      {mode === "list" && (nextCursor ?? publicData.data?.nextCursor) && <div className="discovery-more">
+        {moreError && <p role="alert">{moreError}</p>}
+        <button type="button" className="button secondary" disabled={moreLoading} onClick={() => void loadMore()}>{moreLoading ? "Загружаем…" : "Показать ещё"}</button>
+      </div>}
     </>
   );
 }
@@ -352,16 +647,23 @@ export function StorefrontView({
   salon: s,
   catalog,
   preview = false,
+  colorModeOverride,
 }: {
   salon: Salon;
   catalog?: Catalog;
   preview?: boolean;
+  colorModeOverride?: "light" | "dark";
 }) {
   const auth = useAuth();
   const theme = normalizeStyle(s.style ?? s.draftStyle);
   const [galleryOpen, setGalleryOpen] = useState<number | null>(null);
   const useV2 = auth.storefrontThemesV2;
   const accent = theme.accent;
+  const colorMode = colorModeOverride ?? theme.colorMode;
+  const discovery = s.discoveryProfile ?? s.discoveryDraft;
+  const fullDescription = discovery?.description || theme.description;
+  const contactPhone = s.contact.replace(/[^\d+]/g, "");
+  const canCall = contactPhone.replace(/\D/g, "").length >= 6;
   const section = {
     services: catalog ? (
       <section className="storefront-section" key="services">
@@ -464,7 +766,7 @@ export function StorefrontView({
       </section>
     ) : null,
     gallery:
-      useV2 && theme.galleryMediaIds.length ? (
+      useV2 && theme.galleryMediaIds.length && discovery?.showGallery !== false ? (
         <section className="storefront-section" key="gallery">
           <div className="section-head">
             <h2>Галерея</h2>
@@ -492,8 +794,8 @@ export function StorefrontView({
   };
   return (
     <div
-      className={`storefront accent-${accent} ${useV2 ? `storefront-v2 theme-${theme.themePreset} mode-${theme.colorMode}` : "storefront-legacy"}`}
-      style={useV2 ? storefrontTokenStyle(theme.colorMode, theme.accent) : undefined}
+      className={`storefront accent-${accent} mode-${colorMode} ${useV2 ? `storefront-v2 theme-${theme.themePreset}` : "storefront-legacy"}`}
+      style={storefrontTokenStyle(colorMode, theme.accent)}
     >
       <div className="storefront-cover">
         <Asset
@@ -524,7 +826,7 @@ export function StorefrontView({
         </div>
         <div>
           <h1>{s.name}</h1>
-          <p>{s.address}</p>
+          {s.location ? <a className="storefront-address-link" href={`https://www.openstreetmap.org/?mlat=${s.location.latitude}&mlon=${s.location.longitude}#map=16/${s.location.latitude}/${s.location.longitude}`} target="_blank" rel="noreferrer">{s.address}<small>Открыть на карте</small></a> : <span className="storefront-address-link">{s.address}</span>}
         </div>
         {!preview ? (
           <Link className="button primary" to={`/s/${s.publicCode}/book`}>
@@ -536,15 +838,30 @@ export function StorefrontView({
           </span>
         )}
       </div>
-      <p className="salon-description">{theme?.description}</p>
+      {fullDescription && <p className="salon-description">{fullDescription}</p>}
       <div className="contact-line">
-        <span>✦ {s.contact}</span>
+        <span>✦ {canCall ? <a href={`tel:${contactPhone}`}>{s.contact}</a> : s.contact}</span>
         <span>Часовой пояс: {timezoneLabel(s.timezone)}</span>
       </div>
       {catalog &&
         (useV2 ? theme.sectionOrder : ["services", "staff"]).map(
           (name) => section[name as keyof typeof section],
         )}
+      {discovery?.showHours !== false && !!s.hours?.length && <section className="storefront-section storefront-hours">
+        <div className="section-head"><h2>Часы работы</h2><span className="muted">{timezoneLabel(s.timezone)}</span></div>
+        <dl>{s.hours.map((day) => <div key={day.weekday}><dt>{["", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"][day.weekday]}</dt><dd>{day.intervals.length ? day.intervals.map((interval) => `${interval.start}–${interval.end}`).join(", ") : "Выходной"}</dd></div>)}</dl>
+      </section>}
+      {discovery?.showRating !== false && s.rating && <section className="storefront-section storefront-rating" aria-label={`Рейтинг салона ${s.rating.average} из 5 по ${s.rating.count} оценкам`}>
+        <span aria-hidden="true">★</span><strong>{s.rating.average.toLocaleString("ru-RU")}</strong><small>по {plural(s.rating.count, "оценке", "оценкам", "оценкам")}</small>
+      </section>}
+      {discovery?.showLinks && !!s.socialLinks?.length && <section className="storefront-section storefront-links">
+        <div className="section-head"><h2>Ссылки салона</h2></div>
+        <div>{s.socialLinks.map((link) => <a key={link.id} href={link.url} target="_blank" rel="noopener noreferrer nofollow">{link.label || ({ website: "Сайт", max: "MAX", vk: "ВКонтакте", telegram: "Telegram", instagram: "Instagram", tiktok: "TikTok", other: "Ссылка" }[link.kind])}<Icon name="arrow" size={14} /></a>)}</div>
+      </section>}
+      {s.location && <section className="storefront-section storefront-location">
+        <div className="section-head"><h2>Расположение</h2><span className="muted">{s.location.metroStations.length ? s.location.metroStations.join(" · ") : s.location.district}</span></div>
+        <p>{s.location.address}</p><a className="button secondary" href={`https://www.openstreetmap.org/?mlat=${s.location.latitude}&mlon=${s.location.longitude}#map=16/${s.location.latitude}/${s.location.longitude}`} target="_blank" rel="noreferrer">Открыть в OpenStreetMap <Icon name="arrow" size={14} /></a>
+      </section>}
       {galleryOpen !== null && theme.galleryMediaIds[galleryOpen] && (
         <Modal title={`Фото ${galleryOpen + 1} из ${theme.galleryMediaIds.length}`} onClose={() => setGalleryOpen(null)}>
           <div className="storefront-lightbox">
@@ -578,12 +895,17 @@ export function StorefrontView({
           </div>
         </Modal>
       )}
+      {!preview && <Link className="storefront-booking-dock" to={`/s/${s.publicCode}/book`}>Записаться <Icon name="arrow" size={16} /></Link>}
     </div>
   );
 }
 export function SalonPage() {
   const { code } = useParams();
   const [section, setSection] = useState<"services" | "visits" | "bonuses">("services");
+  const location = useLocation();
+  const navigationState = location.state as { from?: string } | null;
+  const backTo = navigationState?.from ?? "/me/salons";
+  const { resolvedMode } = useColorMode();
   const data = useApi<Salon>(`/public/salons/${code}`),
     catalog = useApi<Catalog>(`/public/salons/${code}/catalog`),
     mine = useApi<Items<Salon>>("/me/salons");
@@ -597,7 +919,7 @@ export function SalonPage() {
   return (
     <>
       <div className="section-head">
-        <BackLink to="/me/salons" label="Все салоны" />
+        <BackLink to={backTo} label="К списку салонов" />
         {data.data && (
           <button
             className={`button secondary ${favorite ? "favorite" : ""}`}
@@ -878,7 +1200,7 @@ export function OffersPage() {
     </>
   );
 }
-function SalonPreferences({ salon }: { salon: Salon }) {
+function SalonPreferences({ salon }: { salon: { id: string; name: string } }) {
   const data = useApi<Preference>(`/me/salons/${salon.id}/preferences`);
   const [prefs, setPrefs] = useState<Preference>();
   const a = useAction();
@@ -895,56 +1217,194 @@ function SalonPreferences({ salon }: { salon: Salon }) {
     });
   }, [data.data]);
   return (
-    <section className="panel">
-      <h3>{salon.name}</h3>
+    <details className="panel salon-preferences-card">
+      <summary>
+        <span>
+          <strong>{salon.name}</strong>
+          <small>Согласие на купоны из этого салона</small>
+        </span>
+        <span className="salon-preferences-state">
+          {!prefs ? "Загрузка…" : prefs.partnerAllowed ? "Разрешено" : "Выключено"}
+        </span>
+      </summary>
+      <div className="salon-preferences-content">
+        <Load {...data}>
+          {prefs && (
+            <>
+              <Check
+                label="Разрешить выдачу партнёрских купонов после визита в этот салон"
+                checked={prefs.partnerAllowed}
+                onChange={(v) => setPrefs({ ...prefs, partnerAllowed: v })}
+              />
+              <p className="small muted salon-preferences-help">
+                Это отдельное согласие на участие салона в партнёрской программе. Оно не включает рекламные сообщения.
+              </p>
+              {a.feedback}
+              <button
+                className="button secondary"
+                disabled={a.busy}
+                onClick={() =>
+                  void a.run(() =>
+                    api(`/me/salons/${salon.id}/preferences`, "PATCH", {
+                      expectedVersion: prefs.version,
+                      partnerAllowed: prefs.partnerAllowed,
+                      serviceBotEnabled: prefs.serviceBotEnabled,
+                      reminderBotEnabled: prefs.reminderBotEnabled,
+                      offerBotEnabled: prefs.offerBotEnabled,
+                      textVersion: "p0-v1",
+                    }),
+                  )
+                }
+              >
+                Сохранить настройки
+              </button>
+            </>
+          )}
+        </Load>
+      </div>
+    </details>
+  );
+}
+
+interface NotificationPreferences {
+  serviceEnabled: boolean;
+  remindersEnabled: boolean;
+  liveWindowEnabled: boolean;
+  version: number;
+  salons: Array<{
+    id: string;
+    name: string;
+    excludedService: boolean;
+    excludedReminder: boolean;
+    excludedLiveWindow: boolean;
+  }>;
+}
+
+function SalonNotificationSettings() {
+  const data = useApi<NotificationPreferences>("/me/notification-preferences");
+  const [draft, setDraft] = useState<NotificationPreferences>();
+  const action = useAction();
+  useEffect(() => setDraft(data.data), [data.data]);
+  const exceptionCount = draft?.salons.reduce((count, salon) => count + [salon.excludedService, salon.excludedReminder, salon.excludedLiveWindow].filter(Boolean).length, 0) ?? 0;
+  return (
+    <section className="panel notification-settings">
+      <h2>Уведомления по салонам</h2>
+      <p>Переключатели применяются ко всем салонам. Для отдельных салонов можно настроить исключения.</p>
       <Load {...data}>
-        {prefs && (
+        {draft && (
           <>
-            <Check
-              label="Сообщения бота об изменениях записи"
-              checked={prefs.serviceBotEnabled}
-              onChange={(v) => setPrefs({ ...prefs, serviceBotEnabled: v })}
-            />
-            <Check
-              label="Напоминания за 24 и 2 часа"
-              checked={prefs.reminderBotEnabled}
-              onChange={(v) => setPrefs({ ...prefs, reminderBotEnabled: v })}
-            />
-            <Check
-              label="Разрешить сообщения MAX о купонах этого салона"
-              checked={prefs.partnerAllowed}
-              onChange={(v) => setPrefs({ ...prefs, partnerAllowed: v })}
-            />
-            <Check
-              label="Сообщения бота о новых купонах"
-              checked={prefs.offerBotEnabled}
-              onChange={(v) => setPrefs({ ...prefs, offerBotEnabled: v })}
-            />
-            {a.feedback}
-            <button
-              className="button secondary"
-              disabled={a.busy}
-              onClick={() =>
-                void a.run(() =>
-                  api(`/me/salons/${salon.id}/preferences`, "PATCH", {
-                    expectedVersion: prefs.version,
-                    partnerAllowed: prefs.partnerAllowed,
-                    serviceBotEnabled: prefs.serviceBotEnabled,
-                    reminderBotEnabled: prefs.reminderBotEnabled,
-                    offerBotEnabled: prefs.offerBotEnabled,
-                    textVersion: "p0-v1",
-                  }),
-                )
-              }
-            >
-              Сохранить настройки
-            </button>
+            <Check label="Изменения и отмены записи" checked={draft.serviceEnabled} disabled={action.busy} onChange={(serviceEnabled) => setDraft({ ...draft, serviceEnabled })} />
+            <Check label="Напоминания о записи за 24 и 2 часа" checked={draft.remindersEnabled} disabled={action.busy} onChange={(remindersEnabled) => setDraft({ ...draft, remindersEnabled })} />
+            <Check label="Предложения свободного времени из листа ожидания" checked={draft.liveWindowEnabled} disabled={action.busy} onChange={(liveWindowEnabled) => setDraft({ ...draft, liveWindowEnabled })} />
+            <details className="notification-exclusions">
+              <summary>Исключения{exceptionCount ? ` · ${exceptionCount}` : ""}</summary>
+              <p className="small muted">Показываем салоны, где у вас когда-либо была запись. Исключение отключает только выбранный тип уведомлений.</p>
+              {draft.salons.length ? (
+                <div className="notification-exclusion-list">
+                  {draft.salons.map((salon) => (
+                    <details className="notification-exclusion-card" key={salon.id}>
+                      <summary>
+                        <strong>{salon.name}</strong>
+                        <small>{[salon.excludedService, salon.excludedReminder, salon.excludedLiveWindow].filter(Boolean).length ? "Есть исключения" : "Все уведомления включены"}</small>
+                      </summary>
+                      <Check label="Не получать сообщения об изменениях записи" checked={salon.excludedService} disabled={action.busy} onChange={(excludedService) => setDraft({ ...draft, salons: draft.salons.map((item) => item.id === salon.id ? { ...item, excludedService } : item) })} />
+                      <Check label="Не получать напоминания" checked={salon.excludedReminder} disabled={action.busy} onChange={(excludedReminder) => setDraft({ ...draft, salons: draft.salons.map((item) => item.id === salon.id ? { ...item, excludedReminder } : item) })} />
+                      <Check label="Не получать предложения свободного времени" checked={salon.excludedLiveWindow} disabled={action.busy} onChange={(excludedLiveWindow) => setDraft({ ...draft, salons: draft.salons.map((item) => item.id === salon.id ? { ...item, excludedLiveWindow } : item) })} />
+                    </details>
+                  ))}
+                </div>
+              ) : (
+                <p className="small muted">Список появится после первой записи в салон.</p>
+              )}
+            </details>
+            {action.feedback}
+            <button className="button secondary" disabled={action.busy} onClick={() => void action.run(async () => {
+              await api("/me/notification-preferences", "PATCH", {
+                serviceEnabled: draft.serviceEnabled,
+                remindersEnabled: draft.remindersEnabled,
+                liveWindowEnabled: draft.liveWindowEnabled,
+                excludedServiceSalonIds: draft.salons.filter((salon) => salon.excludedService).map((salon) => salon.id),
+                excludedReminderSalonIds: draft.salons.filter((salon) => salon.excludedReminder).map((salon) => salon.id),
+                excludedLiveWindowSalonIds: draft.salons.filter((salon) => salon.excludedLiveWindow).map((salon) => salon.id),
+                expectedVersion: draft.version,
+                textVersion: "notifications-v1",
+              });
+              refreshData();
+            }, "Настройки уведомлений сохранены")}>Сохранить настройки</button>
           </>
         )}
       </Load>
     </section>
   );
 }
+
+interface MarketingPreferences {
+  enabled: boolean;
+  version: number;
+  salons: Array<{ id: string; name: string; excluded: boolean }>;
+}
+
+function MarketingSettings() {
+  const data = useApi<MarketingPreferences>("/me/marketing-preferences");
+  const [draft, setDraft] = useState<MarketingPreferences>();
+  const action = useAction();
+  useEffect(() => setDraft(data.data), [data.data]);
+  return (
+    <section className="panel marketing-settings">
+      <h2>Предложения салонов</h2>
+      <p>Одно общее согласие на рекламные предложения в MAX. Можно исключить отдельные салоны.</p>
+      <Load {...data}>
+        {draft && (
+          <>
+            <Check
+              label="Получать рекламные предложения салонов в MAX"
+              checked={draft.enabled}
+              disabled={action.busy}
+              onChange={(enabled) => setDraft({ ...draft, enabled })}
+            />
+            <details className="marketing-exclusions">
+              <summary>Исключения{draft.salons.some((salon) => salon.excluded) ? ` · ${draft.salons.filter((salon) => salon.excluded).length}` : ""}</summary>
+              <p className="small muted">Здесь показаны салоны, где у вас когда-либо была запись. Их предложения не будут приходить, пока салон находится в исключениях.</p>
+              {draft.salons.length ? (
+                <div className="marketing-exclusion-list">
+                  {draft.salons.map((salon) => (
+                    <Check
+                      key={salon.id}
+                      label={salon.name}
+                      checked={salon.excluded}
+                      disabled={action.busy}
+                      onChange={(excluded) => setDraft({
+                        ...draft,
+                        salons: draft.salons.map((item) => item.id === salon.id ? { ...item, excluded } : item),
+                      })}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="small muted">Список появится после первой записи в салон.</p>
+              )}
+            </details>
+            {action.feedback}
+            <button
+              className="button secondary"
+              disabled={action.busy}
+              onClick={() => void action.run(async () => {
+                await api("/me/marketing-preferences", "PATCH", {
+                  enabled: draft.enabled,
+                  excludedSalonIds: draft.salons.filter((salon) => salon.excluded).map((salon) => salon.id),
+                  expectedVersion: draft.version,
+                  textVersion: "marketing-v1",
+                });
+                refreshData();
+              }, "Настройки предложений сохранены")}
+            >Сохранить настройки</button>
+          </>
+        )}
+      </Load>
+    </section>
+  );
+}
+
 export function ProfilePage() {
   const auth = useAuth();
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -991,6 +1451,8 @@ export function ProfilePage() {
   const matchingSalons = [...salons, ...(searchedSalons.data?.items ?? [])]
     .filter((salon, index, allSalons) => allSalons.findIndex((item) => item.id === salon.id) === index)
     .filter((salon) => salon.name.toLocaleLowerCase("ru-RU").includes(salonQuery.trim().toLocaleLowerCase("ru-RU")));
+  const partnerSalons = useApi<MarketingPreferences>("/me/marketing-preferences");
+  const partnerEligibleSalons = partnerSalons.data?.salons ?? [];
   return (
     <>
       <PageTitle
@@ -998,11 +1460,9 @@ export function ProfilePage() {
         title="Профиль и сообщения"
         description="Сервисные сообщения и реклама настраиваются отдельно."
       />
-      <section className="panel profile-theme"><h2>Тема оформления</h2>
-        <div className="theme-options" role="group" aria-label="Тема оформления">
-          <button type="button" aria-pressed={theme === "light"} className={theme === "light" ? "selected" : ""} onClick={() => selectTheme("light")}><span aria-hidden="true">☀</span> Светлая</button>
-          <button type="button" aria-pressed={theme === "dark"} className={theme === "dark" ? "selected" : ""} onClick={() => selectTheme("dark")}><span aria-hidden="true">☾</span> Тёмная</button>
-        </div>
+      <section className="panel appearance-settings">
+        <div><h2>Внешний вид</h2><p>Тема «Как в системе» меняется вместе с настройками устройства.</p></div>
+        <ThemeModePicker />
       </section>
       <div className="profile-links"><a href="#salon-settings">Настройки салонов</a><Link to="/me/events">События</Link><Link to="/me/waitlist">Запросы «Живого окна»</Link><Link to="/me/offers">Предложения</Link><Link to="/create-salon">Создать салон</Link></div>
       {!!auth.me?.memberships.length && <section className="panel"><h2>Рабочие кабинеты</h2><div className="profile-links">{auth.me.memberships.map((membership) => <Link key={membership.id} to={`/work/${membership.tenantId}/calendar`}>{membership.tenantName} · {membership.role === "owner" ? "владелец" : membership.role === "admin" ? "администратор" : "мастер"}</Link>)}</div></section>}
@@ -1098,6 +1558,8 @@ export function ProfilePage() {
           </p>
         </section>
       </div>
+      <MarketingSettings />
+      <SalonNotificationSettings />
       <section className="panel">
         <h3>Тариф и оплата</h3>
         <p>

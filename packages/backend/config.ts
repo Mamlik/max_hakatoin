@@ -60,6 +60,16 @@ const env = z
       .enum(["true", "false"])
       .default("true")
       .transform((value) => value === "true"),
+    SALON_DISCOVERY_SEARCH_ENABLED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+    SALON_DISCOVERY_MAP_ENABLED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+    SALON_DISCOVERY_EDITOR_ENABLED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+    SALON_DISCOVERY_MAP_STYLE_LIGHT_URL: z.string().url().default("https://tiles.openfreemap.org/styles/positron"),
+    SALON_DISCOVERY_MAP_STYLE_DARK_URL: z.string().url().default("https://tiles.openfreemap.org/styles/fiord"),
+    SALON_DISCOVERY_GEOCODER_ENABLED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+    SALON_DISCOVERY_GEOCODER_PROVIDER: z.enum(["nominatim", "geoapify"]).default("nominatim"),
+    SALON_DISCOVERY_NOMINATIM_URL: z.string().url().default("https://nominatim.openstreetmap.org/search"),
+    SALON_DISCOVERY_GEOAPIFY_API_KEY: z.string().max(300).default(""),
+    PLATFORM_ADMIN_MAX_IDS: z.string().default(""),
   })
   .parse({
     ...process.env,

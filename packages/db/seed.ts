@@ -326,13 +326,52 @@ export async function seed() {
         [fixtureId(`customer-${key}`), tenantId, fixtureId("client"), "Анна · демонстрационный клиент", ["Демо"]],
       );
     }
+    // The demo salons need published, verified points so the map is useful out of
+    // the box. These coordinates are synthetic fixtures and never enter production.
+    for (const [key, latitude, longitude, address, district] of [
+      ["a", 55.7697, 37.5963, "Москва, Тестовая улица, 12", "Пресненский район"],
+      ["b", 55.7602, 37.6186, "Москва, Демонстрационный переулок, 7", "Тверской район"],
+    ] as const) {
+      const tenantId = fixtureId(`salon-${key}`);
+      const defaultProfile = JSON.stringify({
+        shortDescription: "Демонстрационный салон рядом с вами",
+        description: "Тестовая карточка салона для демонстрации каталога и карты.",
+        showMap: true,
+        showHours: true,
+        showGallery: true,
+        showRating: true,
+        showLinks: false,
+      });
+      await db.query(
+        `INSERT INTO salon_discovery_profiles(tenant_id,draft,published,draft_version,published_version)
+         VALUES($1,$2::jsonb,$2::jsonb,1,1)
+         ON CONFLICT(tenant_id) DO UPDATE SET
+           draft=jsonb_set(salon_discovery_profiles.draft,'{showMap}','true'::jsonb,true),
+           published=jsonb_set(salon_discovery_profiles.published,'{showMap}','true'::jsonb,true)`,
+        [tenantId, defaultProfile],
+      );
+      await db.query(
+        `INSERT INTO salon_locations(
+           tenant_id,draft_latitude,draft_longitude,draft_address,draft_city,draft_district,draft_geo_status,
+           published_latitude,published_longitude,published_address,published_city,published_district,published_geo_status
+         ) VALUES($1,$2,$3,$4,'Москва',$5,'verified',$2,$3,$4,'Москва',$5,'verified')
+         ON CONFLICT(tenant_id) DO UPDATE SET
+           draft_latitude=EXCLUDED.draft_latitude,draft_longitude=EXCLUDED.draft_longitude,
+           draft_address=EXCLUDED.draft_address,draft_city=EXCLUDED.draft_city,draft_district=EXCLUDED.draft_district,
+           draft_geo_status='verified',published_latitude=EXCLUDED.published_latitude,
+           published_longitude=EXCLUDED.published_longitude,published_address=EXCLUDED.published_address,
+           published_city=EXCLUDED.published_city,published_district=EXCLUDED.published_district,
+           published_geo_status='verified',verified_at=now()`,
+        [tenantId, latitude, longitude, address, district],
+      );
+    }
   });
   for (const key of ["a", "b"])
     await pool.query(
       "INSERT INTO loyalty_programs(tenant_id,service_id,visits_required,free_visits_count) SELECT $1,s.id,5,1 FROM services s WHERE s.id=$2 AND NOT EXISTS(SELECT 1 FROM loyalty_programs p WHERE p.tenant_id=$1 AND p.service_id=s.id)",
       [fixtureId(`salon-${key}`), fixtureId(`service-${key}-0`)],
     );
-  console.log("Demo fixtures ready. Existing salon data was preserved.");
+  console.log("Demo fixtures ready. Salon and booking records are preserved; demo map points were refreshed.");
 }
 if (!process.env.VITEST) {
   try {

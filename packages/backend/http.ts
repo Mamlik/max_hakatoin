@@ -42,6 +42,8 @@ export function route<B>(
     description: string;
     raw?: boolean;
     noIdempotency?: boolean;
+    // Use only for handlers that own a narrower lock and must avoid external I/O under the global write gate.
+    noTransaction?: boolean;
   },
   handler: (ctx: Context<B>) => Promise<unknown>,
 ) {
@@ -165,7 +167,7 @@ export function route<B>(
           );
           return { status, data: result };
         };
-        const result = mutation
+        const result = mutation && !options.noTransaction
           ? await tx(async (db) => {
               // A single short write gate makes all cross-tenant coupon/booking changes serializable.
               // No network I/O is performed under this gate. Reads remain concurrent.

@@ -3,7 +3,7 @@
   header {
     X-Content-Type-Options nosniff
     Referrer-Policy no-referrer
-    Content-Security-Policy "default-src 'self'; script-src 'self' https://st.max.ru; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'"
+    Content-Security-Policy "default-src 'self'; script-src 'self' https://st.max.ru; style-src 'self' 'unsafe-inline'; img-src 'self' https://tiles.openfreemap.org data: blob:; connect-src 'self' https://tiles.openfreemap.org; font-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; object-src 'none'; base-uri 'self'"
   }
   @backend path /api/* /health/* /integrations/* /media/*
   handle @backend {

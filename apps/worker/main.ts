@@ -83,27 +83,39 @@ export async function eligible(db: DB, d: Delivery): Promise<string | null> {
     return m ? null : "ACCESS_OR_PREFERENCE_REVOKED";
   }
   const p = await one<{
-    service_bot_enabled: boolean;
-    reminder_bot_enabled: boolean;
-    offer_bot_enabled: boolean;
     partner_allowed: boolean;
     partner_program_enabled: boolean;
+    marketing_messages_enabled: boolean;
+    marketing_excluded: boolean;
+    service_notifications_enabled: boolean;
+    reminders_enabled: boolean;
+    live_window_notifications_enabled: boolean;
+    service_excluded: boolean;
+    reminder_excluded: boolean;
+    live_window_excluded: boolean;
   }>(
     db,
-    "SELECT p.*,u.partner_program_enabled FROM preferences p JOIN users u ON u.id=p.user_id WHERE p.user_id=$1 AND p.tenant_id=$2",
+    `SELECT COALESCE(p.partner_allowed,false) partner_allowed,
+       u.partner_program_enabled,u.marketing_messages_enabled,
+       EXISTS(SELECT 1 FROM marketing_exclusions e WHERE e.user_id=u.id AND e.tenant_id=$2) marketing_excluded,
+       u.service_notifications_enabled,u.reminders_enabled,u.live_window_notifications_enabled,
+       EXISTS(SELECT 1 FROM notification_exclusions e WHERE e.user_id=u.id AND e.tenant_id=$2 AND e.category='service') service_excluded,
+       EXISTS(SELECT 1 FROM notification_exclusions e WHERE e.user_id=u.id AND e.tenant_id=$2 AND e.category='reminder') reminder_excluded,
+       EXISTS(SELECT 1 FROM notification_exclusions e WHERE e.user_id=u.id AND e.tenant_id=$2 AND e.category='live_window') live_window_excluded
+     FROM users u LEFT JOIN preferences p ON p.user_id=u.id AND p.tenant_id=$2 WHERE u.id=$1`,
     [d.user_id, d.tenant_id],
   );
   if (!p) return "CONSENT_MISSING";
   if (
     d.category === "offer" &&
-    (!p.offer_bot_enabled || !p.partner_allowed || !p.partner_program_enabled)
+    (!p.partner_allowed || !p.partner_program_enabled || !p.marketing_messages_enabled || p.marketing_excluded)
   )
     return "CONSENT_REVOKED";
-  if (d.category === "live_window" && !p.offer_bot_enabled)
+  if (d.category === "live_window" && (!p.live_window_notifications_enabled || p.live_window_excluded))
     return "OFFER_NOTIFICATIONS_DISABLED";
-  if (d.category === "reminder" && !p.reminder_bot_enabled)
+  if (d.category === "reminder" && (!p.reminders_enabled || p.reminder_excluded))
     return "REMINDERS_DISABLED";
-  if (d.category === "service" && !p.service_bot_enabled)
+  if (d.category === "service" && (!p.service_notifications_enabled || p.service_excluded))
     return "SERVICE_DISABLED";
   return null;
 }

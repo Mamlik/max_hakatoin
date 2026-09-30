@@ -18,6 +18,32 @@ export const profile = z
     timezone: z.string().max(80),
   })
   .strict();
+export const discoveryProfile = z.object({
+  shortDescription: z.string().trim().max(160),
+  description: z.string().trim().max(1500),
+  showMap: z.boolean(),
+  showHours: z.boolean(),
+  showGallery: z.boolean(),
+  showRating: z.boolean(),
+  showLinks: z.boolean(),
+  address: z.string().trim().max(300),
+  city: z.string().trim().max(120),
+  district: z.string().trim().max(120),
+  metroStations: z.array(z.string().trim().min(1).max(80)).max(3)
+    .refine((values) => new Set(values.map((value) => value.toLowerCase())).size === values.length, "Станции не должны повторяться"),
+  latitude: z.number().finite().min(-90).max(90).nullable(),
+  longitude: z.number().finite().min(-180).max(180).nullable(),
+}).strict().refine((value) => (value.latitude === null) === (value.longitude === null), {
+  message: "Широту и долготу нужно заполнить вместе",
+  path: ["latitude"],
+});
+export const salonSocialLink = z.object({
+  id: id.optional(),
+  kind: z.enum(["website", "max", "vk", "telegram", "instagram", "tiktok", "other"]),
+  url: z.string().trim().url().max(2048),
+  label: z.string().trim().max(40).default(""),
+  sortOrder: z.number().int().min(0).max(6),
+}).strict();
 export const style = z
   .object({
     schemaVersion: z.literal(2),

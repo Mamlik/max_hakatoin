@@ -13,3 +13,4 @@ test-results/
 coverage/
 *.log
 .local/
+.DS_Store

@@ -4,6 +4,10 @@ export interface Actor {
   display_name: string;
   max_user_id: string;
   partner_program_enabled: boolean;
+  marketing_messages_enabled: boolean;
+  service_notifications_enabled: boolean;
+  reminders_enabled: boolean;
+  live_window_notifications_enabled: boolean;
   version: number;
   session_id: string;
 }

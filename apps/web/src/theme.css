@@ -1,0 +1,241 @@
+/* App-wide tokens for the compact MAX-aligned direction. Public salon pages follow the app color mode while keeping salon branding. */
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --app-bg: #f7f7fa;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-subtle: #f1f0f5;
+  --text: #242433;
+  --muted: #747582;
+  --line: #e5e4eb;
+  --purple: #684bc7;
+  --purple-dark: #543bb0;
+  --accent: #684bc7;
+  --accent-light: #efecfa;
+  --accent-ink: #ffffff;
+  --focus-ring: #a895f1;
+  --status-success-bg: #eaf5ef;
+  --status-success-text: #477d5c;
+  --status-danger-bg: #fbeded;
+  --status-danger-text: #a94e59;
+  --status-warning-bg: #fbf2e5;
+  --status-warning-text: #8a6430;
+  --status-neutral-bg: #eeeeF4;
+  --status-neutral-text: #696977;
+}
+:root[data-color-mode="dark"] {
+  color-scheme: dark;
+  --app-bg: #17161b;
+  --surface: #222027;
+  --surface-raised: #292730;
+  --surface-subtle: #2c2933;
+  --text: #f6f3fa;
+  --muted: #b6b1bf;
+  --line: #696572;
+  --purple: #c4b5fd;
+  --purple-dark: #d4c9ff;
+  --accent: #c4b5fd;
+  --accent-light: #302b3b;
+  --accent-ink: #241d35;
+  --focus-ring: #d1c4ff;
+  --status-success-bg: #293c31;
+  --status-success-text: #b9e4c7;
+  --status-danger-bg: #442d33;
+  --status-danger-text: #f2b7bc;
+  --status-warning-bg: #423722;
+  --status-warning-text: #f0d39c;
+  --status-neutral-bg: #34313b;
+  --status-neutral-text: #d0ccd7;
+}
+html, body, #root { min-height: 100%; background: var(--app-bg); color: var(--text); }
+body { transition: background-color .18s ease, color .18s ease; }
+:where(button,a,input,select,textarea):focus-visible { outline-color: var(--focus-ring); }
+.app-shell, .login-page { background: var(--app-bg); color: var(--text); }
+.brand-mark { background: var(--purple); color: var(--accent-ink); }
+.main-column { background: var(--app-bg); color: var(--text); }
+.main-column main { color: var(--text); }
+.main-column :is(h1,h2,h3,h4):not(.storefront-v2 *):not(.editor-device *) { color: var(--text); }
+.sidebar, .topbar, .panel, .modal, .mobile-more-sheet, .persona, .booking-card,
+.event-list, .stat-card, .data-list, .salon-card, .offer-card, .version-card,
+.storefront-editor-controls, .category-order, .focal-field, .link-card {
+  background-color: var(--surface); color: var(--text); border-color: var(--line);
+}
+.app-shell .workspace-switch, .app-shell .tabs, .app-shell .day-strip button,
+.app-shell .date-tile, .app-shell .circle-arrow, .app-shell .hint-row,
+.app-shell .empty, .app-shell .search-box, .app-shell .note,
+.app-shell .link-box, .app-shell .version-card, .mobile-more-sheet .nav-item {
+  background-color: var(--surface-subtle); color: var(--text); border-color: var(--line);
+}
+.app-shell .topbar, .app-shell .sidebar, .app-shell .panel,
+.app-shell .booking-card, .app-shell .stat-card, .app-shell .data-list,
+.app-shell .salon-card, .app-shell .offer-card, .app-shell .event-list,
+.app-shell .modal, .mobile-more-sheet, .persona { border-color: var(--line); }
+.app-shell p:not(.storefront-v2 *):not(.editor-device *),
+.app-shell .muted:not(.storefront-v2 *):not(.editor-device *),
+.app-shell small:not(.storefront-v2 *):not(.editor-device *),
+.app-shell .page-title p, .app-shell .eyebrow:not(.storefront-v2 *):not(.editor-device *),
+.app-shell footer, .app-shell dt:not(.storefront-v2 *):not(.editor-device *) { color: var(--muted); }
+.app-shell input:not([type="checkbox"]), .app-shell select, .app-shell textarea,
+.login-page input:not([type="checkbox"]), .login-page select, .login-page textarea {
+  background: var(--surface); color: var(--text); border-color: var(--line);
+}
+.app-shell input::placeholder, .app-shell textarea::placeholder { color: var(--muted); }
+.app-shell .primary:not(.storefront-v2 *):not(.editor-device *), .login-page .primary { background: var(--purple); color: var(--accent-ink); border-color: transparent; box-shadow: none; }
+.app-shell .primary:not(.storefront-v2 *):not(.editor-device *):hover, .login-page .primary:hover { background: var(--purple-dark); }
+.app-shell .secondary:not(.storefront-v2 *):not(.editor-device *), .login-page .secondary { background: var(--surface); color: var(--text); border-color: var(--line); }
+.app-shell .secondary:not(.storefront-v2 *):not(.editor-device *):hover, .login-page .secondary:hover { background: var(--surface-subtle); }
+.app-shell .nav-item { color: var(--muted); }
+.app-shell .nav-item.active { background: var(--accent-light); color: var(--purple); }
+.app-shell .nav-item:hover { background: var(--surface-subtle); }
+.app-shell .workspace-switch select { background: transparent; color: var(--text); }
+.app-shell .icon-button { color: var(--muted); }
+.app-shell .icon-button:hover { background: var(--surface-subtle); }
+.app-shell .text-button:not(.storefront-v2 *):not(.editor-device *) { color: var(--purple); }
+.app-shell .badge { background: var(--status-neutral-bg); color: var(--status-neutral-text); }
+.app-shell .badge.confirmed, .app-shell .badge.published, .app-shell .badge.active,
+.app-shell .badge.issued, .app-shell .badge.sent, .app-shell .badge.accepted {
+  color: var(--status-success-text); background: var(--status-success-bg);
+}
+.app-shell .badge.completed, .app-shell .badge.redeemed { color: var(--status-neutral-text); background: var(--status-neutral-bg); }
+.app-shell .badge.cancelled, .app-shell .badge.revoked, .app-shell .badge.failed,
+.app-shell .badge.no_show, .app-shell .badge.stopped, .app-shell .badge.removed {
+  color: var(--status-danger-text); background: var(--status-danger-bg);
+}
+.app-shell .badge.proposed, .app-shell .badge.reserved, .app-shell .badge.pending,
+.app-shell .badge.client_confirmed { color: var(--status-warning-text); background: var(--status-warning-bg); }
+.app-shell .badge.owner, .app-shell .badge.master, .app-shell .badge.admin { color: var(--purple); background: var(--accent-light); }
+.app-shell .notice { border-color: var(--line); background: var(--surface-subtle); color: var(--text); }
+.app-shell .notice.error { background: var(--status-danger-bg); border-color: var(--line); color: var(--status-danger-text); }
+.app-shell .notice.success { background: var(--status-success-bg); border-color: var(--line); color: var(--status-success-text); }
+.app-shell .danger { background: var(--status-danger-bg); color: var(--status-danger-text); border-color: var(--line); }
+.app-shell .tabs button { color: var(--muted); }
+.app-shell .tabs button.selected { color: var(--text); background: var(--surface); }
+.app-shell .day-strip button { color: var(--muted); }
+.app-shell .day-strip .selected { background: var(--accent-light); border-color: var(--purple); color: var(--purple); }
+.app-shell .day-strip .selected strong { color: var(--purple); }
+.app-shell .empty h3, .app-shell .stat-card strong, .app-shell .history-row strong,
+.app-shell .customer-count strong, .app-shell .booking-card h3 { color: var(--text); }
+.app-shell .date-tile { color: var(--purple); }
+.app-shell .date-tile strong, .app-shell .date-tile small { color: var(--purple); }
+.app-shell .search-box { color: var(--muted); }
+.app-shell .search-box input { background: transparent; }
+.app-shell .event-row.unread { background: var(--surface-subtle); }
+.app-shell .file-pick { background: var(--surface-subtle); color: var(--text); border-color: var(--line); }
+.app-shell .file-pick:hover { background: var(--accent-light); border-color: var(--purple); color: var(--purple); }
+.app-shell .timezone-picker span, .app-shell .star-picker span { background: var(--surface); color: var(--text); border-color: var(--line); }
+.app-shell .timezone-picker input:checked + span, .app-shell .slots-grid button.selected { background: var(--accent-light); color: var(--purple); border-color: var(--purple); }
+.app-shell .slots-grid button { background: var(--surface); color: var(--text); border-color: var(--line); }
+.app-shell .version-card { background: var(--surface-subtle); }
+.app-shell .link-box { border-color: var(--line); }
+.app-shell .mobile-nav { background: color-mix(in srgb, var(--surface) 94%, transparent); border-color: var(--line); box-shadow: 0 -8px 26px #100d1812; }
+.app-shell .mobile-nav .nav-item { color: var(--muted); }
+.app-shell .mobile-nav .nav-item.active { background: var(--accent-light); color: var(--purple); }
+.app-shell .mobile-more-backdrop { background: #09080d80; }
+.app-shell .mobile-more-sheet { background: var(--surface); color: var(--text); }
+.app-shell .editor-toolbar { background: color-mix(in srgb, var(--app-bg) 92%, transparent); border-color: var(--line); }
+.app-shell .editor-choice-grid label, .app-shell .gallery-editor > div { background: var(--surface); border-color: var(--line); color: var(--text); }
+.app-shell .editor-choice-grid label.selected { border-color: var(--purple); }
+.app-shell .preview-switch { background: var(--app-bg); }
+.app-shell .preview-switch button[aria-pressed="true"] { background: var(--surface); color: var(--text); }
+.app-shell .mobile-more-sheet .nav-item { background: var(--surface-subtle); color: var(--text); }
+.app-shell .mobile-workspace-switch { color: var(--muted); }
+.app-shell .editor-toolbar { background: color-mix(in srgb, var(--app-bg) 92%, transparent); border-color: var(--line); }
+.app-shell .editor-choice-grid label, .app-shell .gallery-editor > div { background: var(--surface); border-color: var(--line); color: var(--text); }
+.app-shell .editor-choice-grid label.selected { border-color: var(--purple); }
+.app-shell .preview-switch { background: var(--app-bg); }
+.app-shell .preview-switch button[aria-pressed="true"] { background: var(--surface); color: var(--text); }
+.app-shell .mobile-logout { background: transparent; }
+.app-shell .welcome-banner { background: var(--accent-light); }
+.app-shell .welcome-banner h2 { color: var(--text); }
+.app-shell .welcome-banner p { color: var(--muted); }
+.app-shell .welcome-banner .eyebrow { color: var(--muted); }
+.app-shell .art-ticket { background: var(--surface); }
+.app-shell .art-ticket:after { background: var(--surface-subtle); }
+.app-shell .art-ticket strong, .app-shell .art-ticket span, .app-shell .art-ticket i,
+.app-shell .art-star { color: var(--purple); }
+.app-shell .art-ring { border-color: var(--line); }
+.app-shell .persona strong, .app-shell .persona small, .app-shell .persona > svg { color: var(--text); }
+.app-shell .persona-icon { background: var(--accent-light); color: var(--purple); }
+.login-page { background: var(--app-bg); color: var(--text); }
+.login-panel { background: var(--surface); color: var(--text); }
+.login-panel h2, .login-art h1 { color: var(--text); }
+.login-art { background: var(--accent-light); }
+.login-art h1, .login-art p, .login-art .eyebrow, .login-art small { color: var(--muted); }
+.login-art .wordmark { color: var(--text); }
+.login-art:before { border-color: color-mix(in srgb, var(--purple) 12%, transparent); }
+.max-chip { background: color-mix(in srgb, var(--surface) 75%, transparent); color: var(--purple); }
+.persona { border-color: var(--line); }
+.persona:hover { background: var(--surface-subtle); border-color: var(--purple); }
+.persona-icon { background: var(--accent-light); color: var(--purple); }
+.theme-mode-picker { min-width: 0; border: 0; padding: 0; margin: 0; }
+.theme-mode-picker legend { font-size: 12px; font-weight: 750; color: var(--text); margin-bottom: 8px; }
+.theme-mode-picker > p { font-size: 12px; margin: 0 0 12px; color: var(--muted); }
+.theme-mode-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+.theme-mode-options button { min-height: 44px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--text); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11px; font-weight: 650; }
+.theme-mode-icon { width: 16px; height: 16px; flex: none; }
+.theme-mode-options button[aria-pressed="true"] { background: var(--accent-light); color: var(--purple); border-color: var(--purple); }
+.theme-mode-picker.compact legend { margin-bottom: 7px; }
+.mobile-appearance-control { padding: 13px 13px 15px; margin: 0 0 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.mobile-appearance-control .theme-mode-options button { min-height: 42px; padding: 7px 4px; gap: 3px; font-size: 10px; }
+.appearance-settings { display: grid; grid-template-columns: minmax(0,1fr) minmax(330px,.8fr); align-items: center; gap: 25px; }
+.appearance-settings > div > h2 { margin: 0; }
+.appearance-settings > div > p { margin: 5px 0 0; font-size: 12px; }
+.appearance-settings .theme-mode-picker legend { display: none; }
+.appearance-settings .theme-mode-options button { min-height: 48px; }
+/* Compact, platform-native interaction rhythm for variant B. */
+.app-shell .button:not(.storefront-v2 *):not(.editor-device *) { border-radius: 11px; min-height: 44px; }
+.app-shell .panel { border-radius: 16px; }
+.app-shell input:not(.storefront-v2 *):not(.editor-device *), .app-shell select:not(.storefront-v2 *):not(.editor-device *), .app-shell textarea:not(.storefront-v2 *):not(.editor-device *) { min-height: 44px; border-radius: 11px; }
+.app-shell input[type="checkbox"] { min-height: 20px; }
+.app-shell .nav-item { border-radius: 11px; }
+@media (max-width: 900px) {
+  .app-shell .sidebar { background: var(--app-bg); border-color: var(--line); }
+  .app-shell .workspace-switch { border-radius: 11px; }
+  .app-shell .mobile-nav { min-height: calc(64px + env(safe-area-inset-bottom)); padding-top: 6px; padding-bottom: calc(7px + env(safe-area-inset-bottom)); }
+  .app-shell .mobile-nav .nav-item { min-height: 48px; gap: 3px; border-radius: 11px; }
+  .app-shell .mobile-nav .nav-item span { font-size: 10px; line-height: 1.1; }
+  .app-shell .mobile-nav .nav-item svg { width: 19px; height: 19px; }
+  .app-shell .mobile-more-sheet { bottom: calc(64px + env(safe-area-inset-bottom)); max-height: min(76dvh, 680px); padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
+  .app-shell .mobile-more-sheet .nav-item { min-height: 46px; }
+  .app-shell .main-column main { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 640px) {
+  .appearance-settings { grid-template-columns: 1fr; gap: 13px; padding: 18px; }
+  .appearance-settings .theme-mode-picker legend { display: block; }
+  .main-column main { padding-left: 17px; padding-right: 17px; }
+  .page-title { align-items: flex-start; flex-direction: column; gap: 13px; margin-bottom: 22px; }
+  .page-title > .button, .page-title > a.button { width: 100%; }
+  h1 { font-size: 27px; line-height: 1.2; }
+  .section-head { flex-wrap: wrap; }
+  .inline-actions > .button, .inline-actions > button { min-height: 44px; }
+  .theme-mode-options button { flex-direction: column; min-height: 58px; gap: 2px; font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+
+/* Keep secondary controls readable in both modes. */
+.app-shell .field > span, .app-shell .check, .app-shell .booking-progress li { color: var(--muted); }
+.app-shell .booking-progress .current { color: var(--purple); }
+.app-shell .booking-progress .complete { color: var(--status-success-text); }
+.app-shell .booking-progress span { background: var(--surface); border-color: var(--line); }
+.app-shell .booking-progress .complete span { color: var(--status-success-text); background: var(--status-success-bg); border-color: var(--status-success-text); }
+.app-shell .danger-text { color: var(--status-danger-text) !important; }
+.app-shell .step-title > span { background: var(--accent-light); color: var(--purple); }
+.app-shell .summary-total, .app-shell .summary-total strong,
+.app-shell .review-summary strong, .app-shell .review-summary span,
+.app-shell .rating-label, .app-shell .staff-rating, .app-shell .booking-rating { color: var(--purple); }
+.app-shell .star-picker span { background: var(--surface); color: var(--muted); border-color: var(--line); }
+.app-shell .login-page .notice.error { background: var(--status-danger-bg); border-color: var(--line); color: var(--status-danger-text); }
+.app-shell .mobile-more-sheet nav .nav-item.active { background: var(--accent-light); color: var(--purple); }
+@media (max-width: 640px) {
+  .app-shell .welcome-banner { min-height: auto; padding: 17px 18px; margin-bottom: 18px; border-radius: 14px; }
+  .app-shell .welcome-banner h2 { font-size: 19px; margin-bottom: 5px; }
+  .app-shell .welcome-banner p { font-size: 11px; line-height: 1.5; margin: 5px 0; }
+  .app-shell .welcome-banner p br { display: none; }
+  .app-shell .welcome-banner a { margin-top: 6px; min-height: 36px; }
+  .app-shell .banner-art { display: none; }
+}

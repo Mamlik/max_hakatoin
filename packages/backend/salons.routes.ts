@@ -1,13 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { DateTime, IANAZone } from "luxon";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, writeFile, readFile, copyFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import QRCode from "qrcode";
 import { route, audit, list } from "./http.js";
-import { one, rows, type DB } from "../db/db.js";
+import { one, pool, rows, type DB } from "../db/db.js";
+import { authenticate } from "./auth.js";
 import { required, fail, version } from "./errors.js";
 import { config } from "./config.js";
 import {
@@ -23,6 +24,8 @@ import {
   schedule,
   interval,
   date,
+  discoveryProfile,
+  salonSocialLink,
 } from "../contracts/schemas.js";
 import type {
   Tenant,
@@ -39,8 +42,25 @@ import {
   snapshotDays,
   utcIntervals,
 } from "./scheduling.js";
+import { parseViewport, roundDistanceKm, validateSocialLink } from "./discovery.js";
+import { geocodeAddress } from "./map-geocoding.js";
 
 const manage = ["owner", "admin"] as ("owner" | "admin")[];
+const defaultDiscoveryProfile = {
+  shortDescription: "",
+  description: "",
+  showMap: false,
+  showHours: true,
+  showGallery: true,
+  showRating: true,
+  showLinks: true,
+  address: "",
+  city: "",
+  district: "",
+  metroStations: [] as string[],
+  latitude: null as number | null,
+  longitude: null as number | null,
+};
 const catalogMedia = ["owner", "admin", "master"] as (
   | "owner"
   | "admin"
@@ -79,6 +99,30 @@ function normalizeStyle(value: Style): Style {
     galleryMediaIds: value.galleryMediaIds ?? [],
   };
 }
+function queryNumber(value: string | undefined, label: string, min: number, max: number) {
+  if (value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max)
+    fail(400, "INVALID_FILTER", `Проверьте фильтр «${label}»`, { field: label });
+  return parsed;
+}
+function queryList(value: string | undefined, maxItems = 30) {
+  const items = (value ?? "").split(",").map((part) => part.trim()).filter(Boolean);
+  if (items.length > maxItems) fail(400, "INVALID_FILTER", "Слишком много значений фильтра");
+  return [...new Set(items)];
+}
+function readCursor(raw: string | undefined, sort: string): { metric: number | string | null; code: string } | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+    if (value.sort !== sort || typeof value.code !== "string" || value.code.length > 80 ||
+      !(value.metric === null || typeof value.metric === "string" || (typeof value.metric === "number" && Number.isFinite(value.metric))))
+      throw new Error("Invalid cursor");
+    return { metric: value.metric, code: value.code };
+  } catch {
+    fail(400, "INVALID_CURSOR", "Параметр продолжения поиска повреждён");
+  }
+}
 export async function tenantById(db: DB, id: string) {
   return required(
     await one<Tenant>(db, "SELECT * FROM tenants WHERE id=$1", [id]),
@@ -100,6 +144,18 @@ export async function publishCheck(db: DB, tenant: Tenant) {
     "SELECT 1 FROM schedules sc JOIN staff s ON s.id=sc.staff_id JOIN staff_services ss ON ss.staff_id=s.id JOIN services v ON v.id=ss.service_id WHERE sc.tenant_id=$1 AND s.active AND v.active AND EXISTS (SELECT 1 FROM jsonb_array_elements(sc.weekly) d CROSS JOIN jsonb_array_elements(d->'intervals') i WHERE i->>'kind'='work')",
     [tenant.id],
   ));
+  const discovery = await one<{ draft: Record<string, unknown> }>(
+    db,
+    "SELECT draft FROM salon_discovery_profiles WHERE tenant_id=$1",
+    [tenant.id],
+  );
+  const location = discovery?.draft.showMap === true
+    ? await one<{ draft_latitude: number | null; draft_longitude: number | null; draft_geo_status: string }>(
+      db,
+      "SELECT draft_latitude,draft_longitude,draft_geo_status FROM salon_locations WHERE tenant_id=$1",
+      [tenant.id],
+    )
+    : undefined;
   return [
     {
       key: "profile",
@@ -109,9 +165,51 @@ export async function publishCheck(db: DB, tenant: Tenant) {
     { key: "service", label: "Активная услуга", done: hasService },
     { key: "staff", label: "Мастер, оказывающий услугу", done: hasStaff },
     { key: "schedule", label: "Рабочий график", done: hasSchedule },
+    ...(discovery?.draft.showMap === true
+      ? [{ key: "mapLocation", label: "Точка на карте подтверждена", done: !!location && location.draft_latitude !== null && location.draft_longitude !== null && location.draft_geo_status === "verified" }]
+      : []),
   ];
 }
+async function publishDiscovery(db: DB, tenantId: string) {
+  const record = await one<{ draft: Record<string, unknown> }>(
+    db,
+    "SELECT draft FROM salon_discovery_profiles WHERE tenant_id=$1",
+    [tenantId],
+  );
+  if (!record) return;
+  const location = await one<{
+    draft_latitude: number | null;
+    draft_longitude: number | null;
+    draft_geo_status: string;
+  }>(db, "SELECT draft_latitude,draft_longitude,draft_geo_status FROM salon_locations WHERE tenant_id=$1", [tenantId]);
+  if (record.draft.showMap === true && (!location || location.draft_latitude === null || location.draft_longitude === null || location.draft_geo_status !== "verified"))
+    fail(422, "LOCATION_REVIEW_REQUIRED", "Для публикации точки на карте дождитесь проверки координат");
+  await db.query(
+    `UPDATE salon_discovery_profiles SET published=draft,published_version=draft_version,updated_at=now() WHERE tenant_id=$1`,
+    [tenantId],
+  );
+  await db.query(
+    `UPDATE salon_locations SET
+       published_latitude=draft_latitude,published_longitude=draft_longitude,
+       published_address=draft_address,published_city=draft_city,published_district=draft_district,
+       published_metro_stations=draft_metro_stations,published_geo_status=draft_geo_status
+     WHERE tenant_id=$1`,
+    [tenantId],
+  );
+  await db.query(
+    `UPDATE salon_social_links SET published_url=NULL,published_kind=NULL,published_label=NULL,published_sort_order=NULL
+     WHERE tenant_id=$1 AND draft_url IS NULL`,
+    [tenantId],
+  );
+  await db.query(
+    `UPDATE salon_social_links SET published_kind=kind,published_url=draft_url,published_label=draft_label,
+       published_sort_order=draft_sort_order
+     WHERE tenant_id=$1 AND draft_url IS NOT NULL AND draft_validation_status='approved'`,
+    [tenantId],
+  );
+}
 async function publishStyle(db: DB, tenant: Tenant) {
+  await publishDiscovery(db, tenant.id);
   const draftStyle = normalizeStyle(tenant.draft_style);
   for (const asset of [
     draftStyle.logoMediaId,
@@ -179,16 +277,166 @@ export async function publicSalon(db: DB, tenant: Tenant) {
     "SELECT id,file_key FROM media_assets WHERE tenant_id=$1 AND published",
     [tenant.id],
   );
+  const discovery = await one<{ published: Record<string, unknown> }>(
+    db,
+    "SELECT published FROM salon_discovery_profiles WHERE tenant_id=$1",
+    [tenant.id],
+  );
+  const location = await one<{
+    published_latitude: number | null;
+    published_longitude: number | null;
+    published_address: string;
+    published_city: string;
+    published_district: string;
+    published_metro_stations: string[];
+    published_geo_status: string;
+  }>(
+    db,
+    "SELECT published_latitude,published_longitude,published_address,published_city,published_district,published_metro_stations,published_geo_status FROM salon_locations WHERE tenant_id=$1",
+    [tenant.id],
+  );
+  const storedProfile = discovery?.published ?? {
+    shortDescription: "",
+    description: normalizeStyle(tenant.published_style).description,
+    showMap: false,
+    showHours: true,
+    showGallery: true,
+    showRating: true,
+    showLinks: false,
+  };
+  // Location editing fields live in this JSON for one atomic draft payload. Never expose
+  // them from the profile object; public coordinates are returned only through mapVisible.
+  const profile = {
+    shortDescription: storedProfile.shortDescription ?? "",
+    description: storedProfile.description ?? "",
+    showMap: storedProfile.showMap === true,
+    showHours: storedProfile.showHours !== false,
+    showGallery: storedProfile.showGallery !== false,
+    showRating: storedProfile.showRating !== false,
+    showLinks: storedProfile.showLinks === true,
+  };
+  const mapVisible = profile.showMap === true && location?.published_geo_status === "verified" &&
+    location.published_latitude !== null && location.published_longitude !== null;
+  const socialLinks = profile.showLinks
+    ? await rows(db,
+      "SELECT id,published_kind kind,published_url url,published_label label,published_sort_order sort_order FROM salon_social_links WHERE tenant_id=$1 AND published_url IS NOT NULL ORDER BY published_sort_order,created_at",
+      [tenant.id],
+    )
+    : [];
+  const rating = profile.showRating
+    ? await one<{ average: number | null; count: number }>(
+      db,
+      `SELECT CASE WHEN count(*)>=3 THEN round(avg(rating)::numeric,1)::float8 ELSE NULL END average,
+              CASE WHEN count(*)>=3 THEN count(*)::int ELSE 0 END count
+       FROM visit_reviews WHERE tenant_id=$1 AND status='active'`,
+      [tenant.id],
+    )
+    : undefined;
+  const hours: { weekday: number; intervals: { start: string; end: string }[] }[] = [];
+  if (profile.showHours) {
+    const schedules = await rows<{ weekly: Weekday[] }>(
+      db,
+      `SELECT sc.weekly FROM schedules sc JOIN staff s ON s.id=sc.staff_id AND s.tenant_id=sc.tenant_id
+       WHERE sc.tenant_id=$1 AND s.active AND sc.effective_from<=(now() AT TIME ZONE $2)::date
+         AND sc.version=(SELECT max(s2.version) FROM schedules s2 WHERE s2.staff_id=s.id AND s2.effective_from<=(now() AT TIME ZONE $2)::date)`,
+      [tenant.id, tenant.timezone],
+    );
+    const byDay = new Map<number, Array<[number, number]>>();
+    const toMinute = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+    for (const { weekly } of schedules) for (const day of weekly ?? []) {
+      const work = day.intervals.filter((item) => item.kind === "work").map((item) => [toMinute(item.start), toMinute(item.end)] as [number, number]);
+      const breaks = day.intervals.filter((item) => item.kind === "break").map((item) => [toMinute(item.start), toMinute(item.end)] as [number, number]);
+      const remaining: Array<[number, number]> = [];
+      for (const [start, end] of work) {
+        let segments: Array<[number, number]> = [[start, end]];
+        for (const [breakStart, breakEnd] of breaks) {
+          const next: Array<[number, number]> = [];
+          for (const [left, right] of segments) {
+            if (breakEnd <= left || breakStart >= right) next.push([left, right]);
+            else {
+              if (breakStart > left) next.push([left, breakStart]);
+              if (breakEnd < right) next.push([breakEnd, right]);
+            }
+          }
+          segments = next;
+        }
+        remaining.push(...segments);
+      }
+      byDay.set(day.weekday, [...(byDay.get(day.weekday) ?? []), ...remaining]);
+    }
+    for (let weekday = 1; weekday <= 7; weekday++) {
+      const sorted = (byDay.get(weekday) ?? []).sort((a, b) => a[0] - b[0]);
+      const merged = sorted.reduce<Array<[number, number]>>((result, interval) => {
+        const last = result.at(-1);
+        if (last && interval[0] <= last[1]) last[1] = Math.max(last[1], interval[1]);
+        else result.push([...interval]);
+        return result;
+      }, []);
+      hours.push({ weekday, intervals: merged.map(([start, end]) => ({
+        start: `${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`,
+        end: `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`,
+      })) });
+    }
+  }
   return {
     id: tenant.id,
     publicCode: tenant.public_code,
     ...tenant.published_profile,
+    address: mapVisible
+      ? location!.published_address
+      : [location?.published_city, location?.published_district].filter(Boolean).join(", ") || "Адрес уточняется",
     style: normalizeStyle(tenant.published_style),
     media: assets,
     partnerEnabled: tenant.partner_enabled,
+    discoveryProfile: profile,
+    location: mapVisible ? {
+      latitude: Number(location!.published_latitude),
+      longitude: Number(location!.published_longitude),
+      address: location!.published_address,
+      city: location!.published_city,
+      district: location!.published_district,
+      metroStations: location!.published_metro_stations,
+      geoStatus: "verified",
+    } : null,
+    socialLinks,
+    hours,
+    rating: rating?.average === null || rating?.average === undefined
+      ? null
+      : { average: rating.average, count: rating.count },
   };
 }
 export function salonRoutes(app: FastifyInstance) {
+  route(
+    app,
+    "POST",
+    "/api/v1/tenants/:t/discovery/geocode",
+    {
+      roles: manage,
+      schema: z.object({ address: z.string().trim().min(3).max(300) }).strict(),
+      noIdempotency: true,
+      // The geocoder holds its own session advisory lock while waiting for provider quota.
+      noTransaction: true,
+      description: "Ручной поиск координат адреса салона",
+    },
+    async ({ b }) => {
+      if (!config.SALON_DISCOVERY_GEOCODER_ENABLED)
+        fail(503, "GEOCODER_DISABLED", "Поиск адресов временно отключён");
+      const provider = config.SALON_DISCOVERY_GEOCODER_PROVIDER;
+      if (provider === "geoapify" && !config.SALON_DISCOVERY_GEOAPIFY_API_KEY)
+        fail(503, "GEOCODER_NOT_CONFIGURED", "Провайдер поиска адреса не настроен");
+      try {
+        return await geocodeAddress(pool, {
+          provider,
+          query: b.address,
+          nominatimUrl: config.SALON_DISCOVERY_NOMINATIM_URL,
+          geoapifyApiKey: config.SALON_DISCOVERY_GEOAPIFY_API_KEY,
+          userAgent: `RyadomSalon/1.0 (${config.PUBLIC_APP_URL})`,
+        });
+      } catch {
+        fail(503, "GEOCODER_UNAVAILABLE", "Поиск адреса временно недоступен. Можно поставить точку на карте вручную.");
+      }
+    },
+  );
   route(
     app,
     "GET",
@@ -218,6 +466,264 @@ export function salonRoutes(app: FastifyInstance) {
         items: await Promise.all(result.slice(0, limit).map((t) => publicSalon(db, t))),
         nextCursor: result.length > limit ? String(offset + limit) : null,
       };
+    },
+  );
+  route(
+    app,
+    "GET",
+    "/api/v1/public/salons/discover",
+    { public: true, description: "Единый поиск опубликованных салонов для списка и карты" },
+    async ({ db, q, request }) => {
+      if (!config.SALON_DISCOVERY_SEARCH_ENABLED)
+        fail(404, "FEATURE_DISABLED", "Расширенный поиск временно недоступен");
+      const mode = q.mode ?? "list";
+      if (mode !== "map" && mode !== "list")
+        fail(400, "INVALID_FILTER", "Неизвестный режим поиска", { field: "mode" });
+      const sort = q.sort ?? "recommended";
+      if (!["recommended", "nearby", "cheaper", "expensive", "name"].includes(sort))
+        fail(400, "INVALID_FILTER", "Неизвестная сортировка", { field: "sort" });
+      const favoritesOnly = q.favoritesOnly === "true";
+      const user = favoritesOnly && request.headers.authorization
+        ? await authenticate(db, request.headers.authorization)
+        : undefined;
+      if (favoritesOnly && !user)
+        fail(401, "AUTH_REQUIRED", "Войдите, чтобы увидеть избранные салоны");
+
+      const qText = (q.q ?? "").trim().slice(0, 120);
+      for (const field of ["openNow", "onlineBooking", "favoritesOnly"] as const)
+        if (q[field] !== undefined && q[field] !== "true" && q[field] !== "false")
+          fail(400, "INVALID_FILTER", `Некорректное значение фильтра «${field}»`, { field });
+      const categories = queryList(q.categories, 20).map((value) => value.slice(0, 120));
+      const services = queryList(q.serviceIds, 30);
+      if (services.some((value) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))
+        fail(400, "INVALID_FILTER", "Некорректный фильтр услуг", { field: "serviceIds" });
+      const lat = queryNumber(q.lat, "lat", -90, 90);
+      const lng = queryNumber(q.lng, "lng", -180, 180);
+      if ((lat === undefined) !== (lng === undefined))
+        fail(400, "INVALID_FILTER", "Для поиска рядом нужны широта и долгота");
+      const radius = queryNumber(q.radiusKm, "radiusKm", 1, 25);
+      if (radius !== undefined && lat === undefined)
+        fail(400, "INVALID_FILTER", "Сначала укажите точку для поиска рядом");
+      if (sort === "nearby" && lat === undefined)
+        fail(400, "INVALID_FILTER", "Сортировка по расстоянию доступна после выбора точки");
+      const viewport = q.viewport ? parseViewport(q.viewport) : null;
+      if (q.viewport && !viewport)
+        fail(400, "INVALID_FILTER", "Некорректная область карты", { field: "viewport" });
+      const zoom = queryNumber(q.zoom, "zoom", 1, 20);
+      const minPrice = queryNumber(q.minPriceMinor, "minPriceMinor", 0, 100000000);
+      const maxPrice = queryNumber(q.maxPriceMinor, "maxPriceMinor", 0, 100000000);
+      if (minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice)
+        fail(400, "INVALID_FILTER", "Минимальная цена больше максимальной");
+      const city = (q.city ?? "").trim().slice(0, 120);
+      const district = (q.district ?? "").trim().slice(0, 120);
+      const metro = queryList(q.metroIds, 3).map((value) => value.slice(0, 80));
+
+      const args: unknown[] = [];
+      const bind = (value: unknown) => { args.push(value); return `$${args.length}`; };
+      const where = ["t.status='published'"];
+      const normalizedQuery = qText.replace(/ё/gi, "е").toLowerCase();
+      const visibleMapExpr = `(coalesce((dp.published->>'showMap')::boolean,false) AND loc.published_geo_status='verified' AND loc.published_point IS NOT NULL)`;
+      const searchTextArg = bind(normalizedQuery);
+      const searchArg = bind(qText ? `%${normalizedQuery.replace(/[\\%_]/g, "\\$&")}%` : "");
+      const searchTextExpr = (expr: string) => `replace(lower(coalesce(${expr},'')),'ё','е')`;
+      if (qText) {
+        const fields = [
+          "t.published_profile->>'name'", "t.category",
+          "dp.published->>'shortDescription'", "dp.published->>'description'",
+          "loc.published_city", "loc.published_district",
+        ];
+        const textual = fields.map((field) => `${searchTextExpr(field)} LIKE ${searchArg} ESCAPE '\\'`);
+        textual.push(`(${visibleMapExpr} AND ${searchTextExpr("loc.published_address")} LIKE ${searchArg} ESCAPE '\\')`);
+        textual.push(`EXISTS(SELECT 1 FROM services sx WHERE sx.tenant_id=t.id AND sx.active AND ${searchTextExpr("sx.name")} LIKE ${searchArg} ESCAPE '\\')`);
+        textual.push(`EXISTS(SELECT 1 FROM unnest(loc.published_metro_stations) m WHERE ${searchTextExpr("m")} LIKE ${searchArg} ESCAPE '\\')`);
+        where.push(`(${textual.join(" OR ")})`);
+      }
+      if (categories.length) where.push(`t.category=ANY(${bind(categories)}::text[])`);
+      if (services.length) where.push(`EXISTS(SELECT 1 FROM services sf WHERE sf.tenant_id=t.id AND sf.active AND sf.id=ANY(${bind(services)}::uuid[]))`);
+      if (city) where.push(`lower(coalesce(loc.published_city,''))=lower(${bind(city)})`);
+      if (district) where.push(`lower(coalesce(loc.published_district,''))=lower(${bind(district)})`);
+      if (metro.length) where.push(`loc.published_metro_stations && ${bind(metro)}::text[]`);
+
+      const selectedServices = bind(services);
+      const priceExpr = `(CASE WHEN cardinality(${selectedServices}::uuid[])>0 THEN
+        (SELECT min(sv.price_minor) FROM services sv WHERE sv.tenant_id=t.id AND sv.active AND sv.id=ANY(${selectedServices}::uuid[]))
+        ELSE (SELECT min(sv.price_minor) FROM services sv WHERE sv.tenant_id=t.id AND sv.active) END)`;
+      if (sort === "cheaper" || sort === "expensive") where.push(`${priceExpr} IS NOT NULL`);
+      if (minPrice !== undefined) where.push(`${priceExpr}>=${bind(minPrice)}`);
+      if (maxPrice !== undefined) where.push(`${priceExpr}<=${bind(maxPrice)}`);
+
+      const latArg = lat === undefined ? null : bind(lat);
+      const lngArg = lng === undefined ? null : bind(lng);
+      const distanceExpr = latArg && lngArg
+        ? `CASE WHEN ${visibleMapExpr} THEN ST_Distance(loc.published_point,ST_SetSRID(ST_MakePoint(${lngArg},${latArg}),4326)::geography)/1000.0 ELSE NULL::float8 END`
+        : "NULL::float8";
+      if (mode === "map") where.push(visibleMapExpr);
+      if (radius !== undefined) where.push(`${visibleMapExpr} AND ST_DWithin(loc.published_point,ST_SetSRID(ST_MakePoint(${lngArg},${latArg}),4326)::geography,${bind(radius * 1000)})`);
+      else if (sort === "nearby") where.push(visibleMapExpr);
+      if (viewport) {
+        const west = bind(viewport.west), south = bind(viewport.south), east = bind(viewport.east), north = bind(viewport.north);
+        where.push(`${visibleMapExpr} AND loc.published_point && ST_MakeEnvelope(${west},${south},${east},${north},4326)::geography`);
+      }
+      const localDate = `(now() AT TIME ZONE t.timezone)::date`;
+      const localTime = `(now() AT TIME ZONE t.timezone)::time`;
+      const openNowExpr = `EXISTS(
+          SELECT 1 FROM staff os JOIN staff_services oss ON oss.staff_id=os.id
+          JOIN services ovs ON ovs.id=oss.service_id AND ovs.tenant_id=os.tenant_id AND ovs.active
+          WHERE os.tenant_id=t.id AND os.active AND EXISTS(
+            SELECT 1 FROM schedules sc WHERE sc.tenant_id=t.id AND sc.staff_id=os.id AND sc.effective_from<=${localDate}
+              AND sc.version=(SELECT max(s2.version) FROM schedules s2 WHERE s2.staff_id=os.id AND s2.effective_from<=${localDate})
+              AND (
+                EXISTS(SELECT 1 FROM schedule_exceptions ex WHERE ex.staff_id=os.id AND ex.local_date=${localDate} AND ex.mode='replace'
+                  AND EXISTS(SELECT 1 FROM jsonb_array_elements(ex.intervals) i WHERE i->>'kind'='work' AND ${localTime}>=((i->>'start')::time) AND ${localTime}<((i->>'end')::time))
+                  AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(ex.intervals) i WHERE i->>'kind'='break' AND ${localTime}>=((i->>'start')::time) AND ${localTime}<((i->>'end')::time)))
+                OR (NOT EXISTS(SELECT 1 FROM schedule_exceptions ex WHERE ex.staff_id=os.id AND ex.local_date=${localDate})
+                  AND EXISTS(SELECT 1 FROM jsonb_array_elements(sc.weekly) d CROSS JOIN LATERAL jsonb_array_elements(d->'intervals') i
+                    WHERE (d->>'weekday')::int=extract(isodow from ${localDate})::int AND i->>'kind'='work'
+                      AND ${localTime}>=((i->>'start')::time) AND ${localTime}<((i->>'end')::time))
+                  AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(sc.weekly) d CROSS JOIN LATERAL jsonb_array_elements(d->'intervals') i
+                    WHERE (d->>'weekday')::int=extract(isodow from ${localDate})::int AND i->>'kind'='break'
+                      AND ${localTime}>=((i->>'start')::time) AND ${localTime}<((i->>'end')::time)))
+              )
+          )
+        )`;
+      if (q.openNow === "true") where.push(openNowExpr);
+      const onlineExpr = `EXISTS(SELECT 1 FROM services osx JOIN staff_services ssx ON ssx.service_id=osx.id
+        JOIN staff stx ON stx.id=ssx.staff_id JOIN schedules scx ON scx.staff_id=stx.id AND scx.tenant_id=t.id
+          AND scx.effective_from<=${localDate} AND scx.version=(SELECT max(s2.version) FROM schedules s2 WHERE s2.staff_id=stx.id AND s2.effective_from<=${localDate})
+        WHERE osx.tenant_id=t.id AND osx.active AND stx.active
+          AND EXISTS(SELECT 1 FROM jsonb_array_elements(scx.weekly) d CROSS JOIN LATERAL jsonb_array_elements(d->'intervals') i WHERE i->>'kind'='work'))`;
+      if (q.onlineBooking === "true") where.push(onlineExpr);
+      if (q.favoritesOnly === "true") where.push(`EXISTS(SELECT 1 FROM favorites f WHERE f.user_id=${bind(user!.id)} AND f.tenant_id=t.id)`);
+      if (mode === "map" && !config.SALON_DISCOVERY_MAP_ENABLED)
+        fail(404, "FEATURE_DISABLED", "Режим карты временно недоступен");
+
+      const scoreExpr = `(
+        CASE WHEN ${searchTextArg}='' THEN 0
+          WHEN replace(lower(t.published_profile->>'name'),'ё','е')=${searchTextArg} THEN 500
+          WHEN replace(lower(t.published_profile->>'name'),'ё','е') LIKE ${searchArg} ESCAPE '\\' THEN 350
+          WHEN replace(lower(t.category),'ё','е') LIKE ${searchArg} ESCAPE '\\' THEN 220 ELSE 100 END
+        + CASE WHEN dp.published->>'shortDescription'<>'' THEN 10 ELSE 0 END
+        + CASE WHEN ${onlineExpr} THEN 20 ELSE 0 END
+      )::float8`;
+      const metricExpr = sort === "nearby" ? distanceExpr
+        : sort === "cheaper" || sort === "expensive" ? priceExpr
+          : sort === "name" ? "lower(t.published_profile->>'name')"
+            : scoreExpr;
+      const metricType = sort === "name" ? "text" : "float8";
+      const direction = sort === "recommended" || sort === "expensive" ? "DESC" : "ASC";
+      const cursor = mode === "list" ? readCursor(q.cursor, sort) : null;
+      let cursorCondition = "";
+      if (cursor) {
+        const metricArg = cursor.metric === null ? null : bind(cursor.metric);
+        const codeArg = bind(cursor.code);
+        const comparison = direction === "ASC" ? ">" : "<";
+        cursorCondition = cursor.metric === null
+          ? `WHERE metric IS NULL AND public_code>${codeArg}`
+          : `WHERE (metric ${comparison} ${metricArg}::${metricType} OR (metric=${metricArg}::${metricType} AND public_code>${codeArg}) OR metric IS NULL)`;
+      }
+      const listLimit = queryNumber(q.limit, "limit", 1, 20) ?? 20;
+      const limit = mode === "map" ? 501 : listLimit + 1;
+      const limitParameterIndex = args.length + 1;
+      const limitArg = bind(limit);
+      const offsetWhere = where.join(" AND ");
+      const filteredQuery = `SELECT t.id,t.public_code,t.category,t.published_profile,t.published_style,
+          dp.published discovery,loc.published_latitude latitude,loc.published_longitude longitude,
+          loc.published_point geo_point,loc.published_address,loc.published_city,loc.published_district,loc.published_geo_status,
+          ${priceExpr} min_price_minor,${distanceExpr} distance_km,(${onlineExpr}) online_booking,
+          (${scoreExpr}) relevance,${metricExpr} metric,
+          CASE WHEN coalesce((dp.published->>'showMap')::boolean,false) AND loc.published_geo_status='verified' THEN loc.published_latitude ELSE NULL END map_latitude,
+          CASE WHEN coalesce((dp.published->>'showMap')::boolean,false) AND loc.published_geo_status='verified' THEN loc.published_longitude ELSE NULL END map_longitude,
+          CASE WHEN coalesce((dp.published->>'showMap')::boolean,false) AND loc.published_geo_status='verified' THEN loc.published_address
+            ELSE nullif(concat_ws(', ',nullif(loc.published_city,''),nullif(loc.published_district,'')),'') END public_address,
+          (SELECT jsonb_build_object('id',m.id,'fileKey',m.file_key,'purpose',m.purpose)
+             FROM media_assets m WHERE m.tenant_id=t.id AND m.published AND m.id=(t.published_style->>'coverMediaId')::uuid LIMIT 1) cover,
+          (SELECT jsonb_build_object('id',m.id,'fileKey',m.file_key,'purpose',m.purpose)
+             FROM media_assets m WHERE m.tenant_id=t.id AND m.published AND m.id=(t.published_style->>'logoMediaId')::uuid LIMIT 1) logo,
+          (SELECT coalesce(jsonb_agg(sv.name ORDER BY sv.name),'[]'::jsonb) FROM (
+             SELECT s.name FROM services s WHERE s.tenant_id=t.id AND s.active
+               AND (cardinality(${selectedServices}::uuid[])=0 OR s.id=ANY(${selectedServices}::uuid[]))
+             ORDER BY s.name LIMIT 3) sv) matched_services,
+          EXISTS(SELECT 1 FROM staff os JOIN staff_services ss ON ss.staff_id=os.id JOIN services s ON s.id=ss.service_id AND s.active
+            JOIN schedules sc ON sc.staff_id=os.id AND sc.tenant_id=t.id WHERE os.tenant_id=t.id AND os.active) online_candidate,
+          (${openNowExpr})::boolean open_now,
+          ${user ? `EXISTS(SELECT 1 FROM favorites f WHERE f.user_id=${bind(user.id)} AND f.tenant_id=t.id)` : "false"} favorite,
+          CASE WHEN coalesce((dp.published->>'showRating')::boolean,true) THEN
+            (SELECT CASE WHEN count(*)>=3 THEN round(avg(vr.rating)::numeric,1)::float8 ELSE NULL END
+             FROM visit_reviews vr WHERE vr.tenant_id=t.id AND vr.status='active') ELSE NULL END rating
+        FROM tenants t
+        LEFT JOIN salon_discovery_profiles dp ON dp.tenant_id=t.id
+        LEFT JOIN salon_locations loc ON loc.tenant_id=t.id
+        WHERE ${offsetWhere}`;
+      const query = `WITH filtered AS (${filteredQuery}), page AS (
+        SELECT * FROM filtered ${cursorCondition}
+        ORDER BY metric ${direction} NULLS LAST, public_code ASC LIMIT ${limitArg}
+      )
+      SELECT page.*,counts.total_approx FROM (SELECT count(*)::int total_approx FROM filtered) counts LEFT JOIN page ON true`;
+      const result = await rows<Record<string, any>>(db, query, args);
+      const total = result[0]?.total_approx ?? 0;
+      const pageRows = result.filter((item) => item.id !== null);
+      if (mode === "map" && total > 500) {
+        const clusterArgs = [...args, Math.max(0.001, 28 / 2 ** (zoom ?? 10))];
+        const gridArg = `$${clusterArgs.length}`;
+        const clusters = await rows(db, `WITH filtered AS (${filteredQuery})
+          SELECT
+            avg(ST_X(geo_point::geometry)) longitude,
+            avg(ST_Y(geo_point::geometry)) latitude,
+            count(*)::int count,
+            min(ST_X(geo_point::geometry)) west,max(ST_X(geo_point::geometry)) east,
+            min(ST_Y(geo_point::geometry)) south,max(ST_Y(geo_point::geometry)) north
+          FROM filtered WHERE map_latitude IS NOT NULL AND geo_point IS NOT NULL
+            AND $${limitParameterIndex}::int > 0
+          GROUP BY floor(ST_X(geo_point::geometry)/${gridArg})::int,floor(ST_Y(geo_point::geometry)/${gridArg})::int`, clusterArgs);
+        return { items: [], clusters, nextCursor: null, totalApprox: total, appliedFilters: { q: qText, categories, serviceIds: services, city, district, metroIds: metro, sort, mode } };
+      }
+      const hasNext = mode === "list" && pageRows.length > listLimit;
+      const pageItems = pageRows.slice(0, mode === "map" ? 500 : listLimit);
+      const items = pageItems.map((item) => ({
+        id: item.id,
+        publicCode: item.public_code,
+        name: item.published_profile?.name,
+        category: item.category,
+        address: item.public_address || "Адрес уточняется",
+        shortDescription: item.discovery?.shortDescription || "",
+        cover: item.cover,
+        logo: item.logo ?? item.cover,
+        minPriceMinor: item.min_price_minor === null ? null : Number(item.min_price_minor),
+        matchedServices: item.matched_services ?? [],
+        onlineBooking: item.online_booking,
+        openNow: item.open_now,
+        distanceKm: item.distance_km === null ? null : roundDistanceKm(Number(item.distance_km)),
+        favorite: item.favorite,
+        rating: item.rating === null ? null : Number(item.rating),
+        location: mode === "map" && item.map_latitude !== null ? { latitude: Number(item.map_latitude), longitude: Number(item.map_longitude) } : null,
+      }));
+      const last = pageItems.at(-1);
+      const nextCursor = hasNext && last
+        ? Buffer.from(JSON.stringify({ sort, metric: last.metric ?? null, code: last.public_code })).toString("base64url")
+        : null;
+      return {
+        items,
+        clusters: [],
+        nextCursor,
+        totalApprox: total,
+        appliedFilters: { q: qText, categories, serviceIds: services, city, district, metroIds: metro, minPriceMinor: minPrice, maxPriceMinor: maxPrice, openNow: q.openNow === "true", onlineBooking: q.onlineBooking === "true", favoritesOnly, lat: lat ?? null, lng: lng ?? null, radiusKm: radius ?? null, viewport: viewport ?? null, sort, mode },
+      };
+    },
+  );
+  route(
+    app,
+    "GET",
+    "/api/v1/public/salons/discover/facets",
+    { public: true, description: "Фасеты опубликованного каталога" },
+    async ({ db }) => {
+      if (!config.SALON_DISCOVERY_SEARCH_ENABLED)
+        fail(404, "FEATURE_DISABLED", "Расширенный поиск временно недоступен");
+      const categories = await rows(db, "SELECT category name,count(*)::int count FROM tenants WHERE status='published' GROUP BY category ORDER BY category");
+      const cities = await rows(db, "SELECT published_city name,count(*)::int count FROM salon_locations l JOIN tenants t ON t.id=l.tenant_id WHERE t.status='published' AND l.published_city<>'' GROUP BY published_city ORDER BY published_city");
+      const districts = await rows(db, "SELECT published_district name,count(*)::int count FROM salon_locations l JOIN tenants t ON t.id=l.tenant_id WHERE t.status='published' AND l.published_district<>'' GROUP BY published_district ORDER BY published_district");
+      const metros = await rows(db, "SELECT m name,count(DISTINCT t.id)::int count FROM salon_locations l JOIN tenants t ON t.id=l.tenant_id CROSS JOIN LATERAL unnest(l.published_metro_stations) m WHERE t.status='published' GROUP BY m ORDER BY m");
+      const services = await rows(db, "SELECT id,name,count(DISTINCT tenant_id)::int salon_count FROM services WHERE active GROUP BY id,name ORDER BY name LIMIT 300");
+      return { categories, cities, districts, metroStations: metros, services };
     },
   );
   route(
@@ -389,9 +895,15 @@ export function salonRoutes(app: FastifyInstance) {
       app,
       "GET",
       `/api/v1/work/:t/storefront/${endpoint}`,
-      { roles: ["owner"], description: "Черновик и предпросмотр оформления" },
+      { roles: manage, description: "Черновик и предпросмотр оформления" },
       async ({ db, p }) => {
         const t = await tenantById(db, p.t!);
+        const discovery = await one<{ draft: Record<string, unknown> }>(db,
+          "SELECT draft FROM salon_discovery_profiles WHERE tenant_id=$1", [t.id]);
+        const location = await one<Record<string, unknown>>(db,
+          `SELECT draft_latitude latitude,draft_longitude longitude,draft_address address,draft_city city,
+             draft_district district,draft_metro_stations metro_stations,draft_geo_status geo_status
+           FROM salon_locations WHERE tenant_id=$1`, [t.id]);
         return {
           ...t,
           draftStyle: normalizeStyle(t.draft_style),
@@ -402,6 +914,14 @@ export function salonRoutes(app: FastifyInstance) {
             "SELECT id,file_key,purpose FROM media_assets WHERE tenant_id=$1",
             [p.t],
           ),
+          discoveryDraft: { ...defaultDiscoveryProfile, ...(discovery?.draft ?? {}),
+            latitude: location?.latitude === null || location?.latitude === undefined ? null : Number(location.latitude),
+            longitude: location?.longitude === null || location?.longitude === undefined ? null : Number(location.longitude),
+            address: location?.address ?? "", city: location?.city ?? "", district: location?.district ?? "",
+            metroStations: location?.metro_stations ?? [], geoStatus: location?.geo_status ?? "draft" },
+          socialLinks: await rows(db,
+            `SELECT id,kind,draft_url url,draft_label label,draft_sort_order sort_order,draft_validation_status validation_status
+             FROM salon_social_links WHERE tenant_id=$1 AND draft_url IS NOT NULL ORDER BY draft_sort_order,created_at`, [t.id]),
         };
       },
     );
@@ -410,8 +930,8 @@ export function salonRoutes(app: FastifyInstance) {
     "PUT",
     "/api/v1/work/:t/storefront/draft",
     {
-      roles: ["owner"],
-      schema: expected.extend({ style }).strict(),
+      roles: manage,
+      schema: expected.extend({ style, discovery: discoveryProfile.optional(), socialLinks: z.array(salonSocialLink).max(7).optional() }).strict(),
       description: "Сохранение черновика оформления",
     },
     async ({ db, actor, p, b }) => {
@@ -445,6 +965,52 @@ export function salonRoutes(app: FastifyInstance) {
             [asset, t.id],
           ),
         );
+      if (b.discovery) {
+        if (!config.SALON_DISCOVERY_EDITOR_ENABLED)
+          fail(404, "FEATURE_DISABLED", "Редактор каталога временно недоступен");
+        await db.query(
+          `INSERT INTO salon_discovery_profiles(tenant_id,draft,draft_version,updated_at)
+           VALUES($1,$2,1,now()) ON CONFLICT(tenant_id) DO UPDATE
+           SET draft=EXCLUDED.draft,draft_version=salon_discovery_profiles.draft_version+1,updated_at=now()`,
+          [t.id, JSON.stringify(b.discovery)],
+        );
+        const location = b.discovery;
+        const geoStatus = location.latitude === null ? "draft" : "pending";
+        await db.query(
+          `INSERT INTO salon_locations(tenant_id,draft_latitude,draft_longitude,draft_address,draft_city,draft_district,draft_metro_stations,draft_geo_status)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id) DO UPDATE SET
+             draft_latitude=EXCLUDED.draft_latitude,draft_longitude=EXCLUDED.draft_longitude,draft_address=EXCLUDED.draft_address,
+             draft_city=EXCLUDED.draft_city,draft_district=EXCLUDED.draft_district,draft_metro_stations=EXCLUDED.draft_metro_stations,
+             draft_geo_status=EXCLUDED.draft_geo_status,verified_by=NULL,verified_at=NULL`,
+          [t.id, location.latitude, location.longitude, location.address, location.city, location.district, location.metroStations, geoStatus],
+        );
+      }
+      if (b.socialLinks) {
+        if (!config.SALON_DISCOVERY_EDITOR_ENABLED)
+          fail(404, "FEATURE_DISABLED", "Редактор каталога временно недоступен");
+        const submittedIds = b.socialLinks.map((link) => link.id ?? randomUUID());
+        for (let index = 0; index < b.socialLinks.length; index++) {
+          const link = b.socialLinks[index]!;
+          const linkId = submittedIds[index]!;
+          if (link.id && !(await one(db, "SELECT id FROM salon_social_links WHERE id=$1 AND tenant_id=$2", [link.id, t.id])))
+            required(undefined);
+          const validated = validateSocialLink(link.kind, link.url);
+          if (!validated.ok) fail(422, "INVALID_SOCIAL_LINK", validated.reason, { index });
+          await db.query(
+            `INSERT INTO salon_social_links(id,tenant_id,kind,draft_url,draft_label,draft_sort_order,draft_validation_status,updated_at)
+             VALUES($1,$2,$3,$4,$5,$6,$7,now()) ON CONFLICT(id) DO UPDATE SET
+               kind=EXCLUDED.kind,draft_url=EXCLUDED.draft_url,draft_label=EXCLUDED.draft_label,
+               draft_sort_order=EXCLUDED.draft_sort_order,draft_validation_status=EXCLUDED.draft_validation_status,updated_at=now()
+             WHERE salon_social_links.tenant_id=EXCLUDED.tenant_id`,
+            [linkId, t.id, link.kind, validated.url, link.label, link.sortOrder, validated.validationStatus],
+          );
+        }
+        const keepIds = submittedIds;
+        await db.query(
+          `UPDATE salon_social_links SET draft_url=NULL,updated_at=now() WHERE tenant_id=$1 AND NOT(id=ANY($2::uuid[]))`,
+          [t.id, keepIds],
+        );
+      }
       await audit(db, t.id, actor.id, "storefront.draft", t.id);
       return one(
         db,
@@ -492,6 +1058,70 @@ export function salonRoutes(app: FastifyInstance) {
           JSON.stringify({ ...t.published_style, logoMediaId: b.mediaId }),
         ],
       );
+    },
+  );
+  route(
+    app,
+    "GET",
+    "/api/v1/admin/salon-discovery/review-queue",
+    { description: "Очередь проверки точек и ссылок каталога", noIdempotency: true },
+    async ({ db, actor }) => {
+      const allowed = new Set(config.PLATFORM_ADMIN_MAX_IDS.split(",").map((value) => value.trim()).filter(Boolean));
+      if (!allowed.has(actor.max_user_id)) fail(403, "FORBIDDEN", "Недостаточно прав");
+      return {
+        items: await rows(db,
+          `SELECT t.id,t.name,t.public_code,t.version,l.draft_address,l.draft_city,l.draft_district,
+             l.draft_latitude,l.draft_longitude,l.draft_geo_status,
+             coalesce(jsonb_agg(jsonb_build_object('id',sl.id,'kind',sl.kind,'url',sl.draft_url,'label',sl.draft_label))
+               FILTER(WHERE sl.draft_url IS NOT NULL AND sl.draft_validation_status='pending'),'[]'::jsonb) pending_links
+           FROM tenants t LEFT JOIN salon_locations l ON l.tenant_id=t.id
+           LEFT JOIN salon_social_links sl ON sl.tenant_id=t.id
+           WHERE t.status='published' AND (l.draft_geo_status='pending' OR sl.draft_validation_status='pending')
+           GROUP BY t.id,l.tenant_id ORDER BY t.name LIMIT 100`),
+      };
+    },
+  );
+  route(
+    app,
+    "POST",
+    "/api/v1/admin/salons/:t/discovery-review",
+    {
+      schema: expected.extend({
+        geoStatus: z.enum(["verified", "rejected"]).optional(),
+        approvedLinkIds: z.array(id).max(7).default([]),
+        rejectedLinkIds: z.array(id).max(7).default([]),
+        rejectionReason: z.string().trim().max(500).default(""),
+      }).strict(),
+      description: "Решение модератора о координатах и ссылках",
+    },
+    async ({ db, actor, p, b }) => {
+      const allowed = new Set(config.PLATFORM_ADMIN_MAX_IDS.split(",").map((value) => value.trim()).filter(Boolean));
+      if (!allowed.has(actor.max_user_id)) fail(403, "FORBIDDEN", "Недостаточно прав");
+      if (new Set([...b.approvedLinkIds, ...b.rejectedLinkIds]).size !== b.approvedLinkIds.length + b.rejectedLinkIds.length)
+        fail(422, "VALIDATION_ERROR", "Ссылка не может быть одновременно одобрена и отклонена");
+      const t = await tenantById(db, p.t!);
+      version(t, b.expectedVersion);
+      if (b.geoStatus) {
+        const location = await one<{ draft_latitude: number | null; draft_longitude: number | null }>(
+          db, "SELECT draft_latitude,draft_longitude FROM salon_locations WHERE tenant_id=$1", [t.id]);
+        if (!location || location.draft_latitude === null || location.draft_longitude === null)
+          fail(422, "LOCATION_REQUIRED", "Сначала салон должен указать точку на карте");
+        await db.query(
+          `UPDATE salon_locations SET draft_geo_status=$2,verified_by=$3,verified_at=now() WHERE tenant_id=$1`,
+          [t.id, b.geoStatus, actor.id]);
+      }
+      for (const [ids, status] of [[b.approvedLinkIds, "approved"], [b.rejectedLinkIds, "rejected"]] as const) {
+        if (!ids.length) continue;
+        const result = await db.query(
+          `UPDATE salon_social_links SET draft_validation_status=$3,rejection_reason=$4,updated_at=now()
+           WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND draft_url IS NOT NULL`,
+          [t.id, ids, status, status === "rejected" ? b.rejectionReason || "Не прошла проверку" : null]);
+        if (result.rowCount !== ids.length) fail(404, "NOT_FOUND", "Одна из ссылок не найдена в этом салоне");
+      }
+      await audit(db, t.id, actor.id, "discovery.reviewed", t.id, {
+        geoStatus: b.geoStatus ?? null, approvedLinkIds: b.approvedLinkIds, rejectedLinkIds: b.rejectedLinkIds,
+      });
+      return tenantById(db, t.id);
     },
   );
   for (const action of ["publish", "pause", "archive", "restore"])

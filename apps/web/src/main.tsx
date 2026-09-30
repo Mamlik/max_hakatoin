@@ -44,12 +44,10 @@ import { LiveWindowOfferPage, LiveWindowWorkPage, WaitlistForm, WaitlistPage } f
 import "./style.css";
 import "./design-system.css";
 
-try {
-  document.documentElement.dataset.theme = localStorage.getItem("ryadom-theme") === "dark" ? "dark" : "light";
-} catch {
-  document.documentElement.dataset.theme = "light";
-}
 import "./ui-experiments.css";
+import "./theme.css";
+import "./ux-refinements.css";
+import { ThemeModePicker, ThemeProvider } from "./theme";
 
 function App() {
   const auth = useAuth();
@@ -63,6 +61,8 @@ function App() {
   const tenantId = member ? pathTenantId : undefined;
   const navigationType = useNavigationType();
   const [mobileMoreOpen, setMobileMoreOpen] = React.useState(false);
+  const mobileMoreButtonRef = React.useRef<HTMLButtonElement>(null);
+  const mobileMoreSheetRef = React.useRef<HTMLElement>(null);
   // A deep link resolves to a path while AuthProvider sits outside the router,
   // so the router performs the navigation once the path is known.
   React.useEffect(() => {
@@ -89,6 +89,41 @@ function App() {
     setMobileMoreOpen(false);
     if (navigationType !== "POP") window.scrollTo({ top: 0, left: 0 });
   }, [location.pathname, navigationType]);
+  React.useEffect(() => {
+    if (!mobileMoreOpen) return;
+    const sheet = mobileMoreSheetRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusable = () => Array.from(sheet?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), select:not([disabled]), [tabindex="0"]',
+    ) ?? []);
+    const first = focusable()[0];
+    first?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileMoreOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      const firstItem = items[0];
+      const lastItem = items.at(-1);
+      if (event.shiftKey && document.activeElement === firstItem) {
+        event.preventDefault();
+        lastItem?.focus();
+      } else if (!event.shiftKey && document.activeElement === lastItem) {
+        event.preventDefault();
+        firstItem?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      mobileMoreButtonRef.current?.focus();
+    };
+  }, [mobileMoreOpen]);
   if (auth.loading)
     return (
       <div className="boot">
@@ -249,6 +284,7 @@ function App() {
   for (const item of navigation)
     if (mobilePrimary.length < 4 && !mobilePrimary.includes(item)) mobilePrimary.push(item);
   const mobileMore = navigation.filter((item) => !mobilePrimary.includes(item));
+  const mobileMoreActive = mobileMore.some(([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`));
   const navLink = ([to, icon, label]: NavigationItem, mobile = false) => (
     <NavLink key={to} to={to} className={({ isActive }) =>
       `nav-item ${mobile ? "mobile-nav-item" : ""} ${isActive ? "active" : ""}`}>
@@ -338,7 +374,9 @@ function App() {
         <nav className="mobile-nav" aria-label="Основная навигация">
           {mobilePrimary.map((item) => navLink(item, true))}
           <button
-            className={`nav-item mobile-nav-item ${mobileMoreOpen ? "active" : ""}`}
+            className={`nav-item mobile-nav-item ${mobileMoreOpen || mobileMoreActive ? "active" : ""}`}
+            ref={mobileMoreButtonRef}
+            aria-haspopup="dialog"
             aria-expanded={mobileMoreOpen}
             aria-controls="mobile-more-sheet"
             onClick={() => setMobileMoreOpen((open) => !open)}
@@ -351,12 +389,15 @@ function App() {
           <div className="mobile-more-backdrop" onClick={() => setMobileMoreOpen(false)}>
             <section
               id="mobile-more-sheet"
+              ref={mobileMoreSheetRef}
               className="mobile-more-sheet"
-              aria-label="Ещё"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="mobile-more-title"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="section-head">
-                <h2>Ещё</h2>
+                <h2 id="mobile-more-title">Ещё</h2>
                 <button
                   className="icon-button"
                   aria-label="Закрыть меню"
@@ -386,6 +427,7 @@ function App() {
                   ))}
                 </select>
               </label>
+              <div className="mobile-appearance-control"><ThemeModePicker compact /></div>
               <nav>{mobileMore.map((item) => navLink(item))}</nav>
               <Link className="nav-item" to="/create-salon">
                 <Icon name="plus" />
@@ -507,10 +549,12 @@ class ErrorBoundary extends React.Component<
 }
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
-    <AuthProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
   </ErrorBoundary>,
 );

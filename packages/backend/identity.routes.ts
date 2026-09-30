@@ -99,6 +99,17 @@ export function identityRoutes(app: FastifyInstance) {
       botName: config.MAX_BOT_NAME,
       appUrl: config.PUBLIC_APP_URL,
       storefrontThemesV2: config.STOREFRONT_THEMES_V2,
+      salonDiscovery: {
+        searchEnabled: config.SALON_DISCOVERY_SEARCH_ENABLED,
+        mapEnabled: config.SALON_DISCOVERY_MAP_ENABLED,
+        editorEnabled: config.SALON_DISCOVERY_EDITOR_ENABLED,
+        mapProvider: "openfreemap",
+        mapStyleLight: config.SALON_DISCOVERY_MAP_STYLE_LIGHT_URL,
+        mapStyleDark: config.SALON_DISCOVERY_MAP_STYLE_DARK_URL,
+        geocoderEnabled: config.SALON_DISCOVERY_GEOCODER_ENABLED &&
+          (config.SALON_DISCOVERY_GEOCODER_PROVIDER === "nominatim" || !!config.SALON_DISCOVERY_GEOAPIFY_API_KEY),
+        geocoderProvider: config.SALON_DISCOVERY_GEOCODER_PROVIDER,
+      },
     }),
   );
   route(
@@ -183,6 +194,183 @@ export function identityRoutes(app: FastifyInstance) {
   route(
     app,
     "GET",
+    "/api/v1/me/notification-preferences",
+    { description: "Общие сервисные уведомления по салонам и исключения" },
+    async ({ db, actor }) => ({
+      serviceEnabled: actor.service_notifications_enabled,
+      remindersEnabled: actor.reminders_enabled,
+      liveWindowEnabled: actor.live_window_notifications_enabled,
+      version: actor.version,
+      salons: await rows(
+        db,
+        `SELECT t.id,t.name,
+           EXISTS(SELECT 1 FROM notification_exclusions e WHERE e.user_id=$1 AND e.tenant_id=t.id AND e.category='service') excluded_service,
+           EXISTS(SELECT 1 FROM notification_exclusions e WHERE e.user_id=$1 AND e.tenant_id=t.id AND e.category='reminder') excluded_reminder,
+           EXISTS(SELECT 1 FROM notification_exclusions e WHERE e.user_id=$1 AND e.tenant_id=t.id AND e.category='live_window') excluded_live_window
+         FROM tenants t WHERE EXISTS (
+           SELECT 1 FROM bookings b WHERE b.tenant_id=t.id
+             AND (b.user_id=$1 OR EXISTS(SELECT 1 FROM customers c WHERE c.id=b.customer_id AND c.user_id=$1))
+         ) ORDER BY t.name`,
+        [actor.id],
+      ),
+    }),
+  );
+  route(
+    app,
+    "PATCH",
+    "/api/v1/me/notification-preferences",
+    {
+      schema: expected.extend({
+        serviceEnabled: z.boolean(),
+        remindersEnabled: z.boolean(),
+        liveWindowEnabled: z.boolean(),
+        excludedServiceSalonIds: z.array(z.uuid()).max(500),
+        excludedReminderSalonIds: z.array(z.uuid()).max(500),
+        excludedLiveWindowSalonIds: z.array(z.uuid()).max(500),
+        textVersion: z.literal("notifications-v1"),
+      }).strict(),
+      description: "Обновление общих сервисных уведомлений и исключений по салонам",
+    },
+    async ({ db, actor, b }) => {
+      version(actor, b.expectedVersion);
+      const exclusionSets = [
+        ["service", b.excludedServiceSalonIds],
+        ["reminder", b.excludedReminderSalonIds],
+        ["live_window", b.excludedLiveWindowSalonIds],
+      ] as const;
+      const allExcludedIds = [...new Set(exclusionSets.flatMap(([, ids]) => ids))];
+      if (exclusionSets.some(([, ids]) => new Set(ids).size !== ids.length))
+        fail(422, "VALIDATION_ERROR", "Салоны в исключениях не должны повторяться");
+      if (allExcludedIds.length) {
+        const visitedSalons = await rows<{ id: string }>(
+          db,
+          `SELECT DISTINCT tenant_id id FROM bookings
+           WHERE tenant_id=ANY($2::uuid[])
+             AND (user_id=$1 OR EXISTS(SELECT 1 FROM customers c WHERE c.id=bookings.customer_id AND c.user_id=$1))`,
+          [actor.id, allExcludedIds],
+        );
+        if (visitedSalons.length !== allExcludedIds.length)
+          fail(422, "SALON_NOT_BOOKED", "В исключения можно добавить только салоны, где у вас была запись");
+      }
+      const result = await one(
+        db,
+        `UPDATE users SET service_notifications_enabled=$2,reminders_enabled=$3,
+           live_window_notifications_enabled=$4,version=version+1 WHERE id=$1 RETURNING *`,
+        [actor.id, b.serviceEnabled, b.remindersEnabled, b.liveWindowEnabled],
+      );
+      await db.query("DELETE FROM notification_exclusions WHERE user_id=$1", [actor.id]);
+      for (const [category, ids] of exclusionSets)
+        for (const salonId of ids)
+          await db.query(
+            "INSERT INTO notification_exclusions(user_id,tenant_id,category) VALUES($1,$2,$3)",
+            [actor.id, salonId, category],
+          );
+      await db.query(
+        "INSERT INTO consent_history(user_id,before_state,after_state,text_version) VALUES($1,$2,$3,$4)",
+        [
+          actor.id,
+          JSON.stringify({
+            serviceEnabled: actor.service_notifications_enabled,
+            remindersEnabled: actor.reminders_enabled,
+            liveWindowEnabled: actor.live_window_notifications_enabled,
+          }),
+          JSON.stringify({
+            serviceEnabled: b.serviceEnabled,
+            remindersEnabled: b.remindersEnabled,
+            liveWindowEnabled: b.liveWindowEnabled,
+            excludedServiceSalonIds: b.excludedServiceSalonIds,
+            excludedReminderSalonIds: b.excludedReminderSalonIds,
+            excludedLiveWindowSalonIds: b.excludedLiveWindowSalonIds,
+          }),
+          b.textVersion,
+        ],
+      );
+      return result;
+    },
+  );
+  route(
+    app,
+    "GET",
+    "/api/v1/me/marketing-preferences",
+    { description: "Глобальное согласие на рекламные предложения и салоны-исключения" },
+    async ({ db, actor }) => ({
+      enabled: actor.marketing_messages_enabled,
+      version: actor.version,
+      salons: await rows(
+        db,
+        `SELECT t.id,t.name,EXISTS(
+           SELECT 1 FROM marketing_exclusions e
+           WHERE e.user_id=$1 AND e.tenant_id=t.id
+         ) excluded
+         FROM tenants t
+         WHERE EXISTS (
+           SELECT 1 FROM bookings b
+           WHERE b.tenant_id=t.id
+             AND (b.user_id=$1 OR EXISTS(
+               SELECT 1 FROM customers c WHERE c.id=b.customer_id AND c.user_id=$1
+             ))
+         )
+         ORDER BY t.name`,
+        [actor.id],
+      ),
+    }),
+  );
+  route(
+    app,
+    "PATCH",
+    "/api/v1/me/marketing-preferences",
+    {
+      schema: expected.extend({
+        enabled: z.boolean(),
+        excludedSalonIds: z.array(z.uuid()).max(500),
+        textVersion: z.literal("marketing-v1"),
+      }).strict(),
+      description: "Сохранение общего согласия на предложения и исключений для посещённых салонов",
+    },
+    async ({ db, actor, b }) => {
+      version(actor, b.expectedVersion);
+      const excludedSalonIds = [...new Set(b.excludedSalonIds)];
+      if (excludedSalonIds.length !== b.excludedSalonIds.length)
+        fail(422, "VALIDATION_ERROR", "Салоны в исключениях не должны повторяться");
+      if (excludedSalonIds.length) {
+        const eligibleSalons = await rows<{ id: string }>(
+          db,
+          `SELECT DISTINCT tenant_id id FROM bookings
+           WHERE tenant_id=ANY($2::uuid[])
+             AND (user_id=$1 OR EXISTS(
+               SELECT 1 FROM customers c WHERE c.id=bookings.customer_id AND c.user_id=$1
+             ))`,
+          [actor.id, excludedSalonIds],
+        );
+        if (eligibleSalons.length !== excludedSalonIds.length)
+          fail(422, "SALON_NOT_BOOKED", "В исключения можно добавить только салоны, где у вас была запись");
+      }
+      const result = await one(
+        db,
+        "UPDATE users SET marketing_messages_enabled=$2,version=version+1 WHERE id=$1 RETURNING *",
+        [actor.id, b.enabled],
+      );
+      await db.query("DELETE FROM marketing_exclusions WHERE user_id=$1", [actor.id]);
+      for (const salonId of excludedSalonIds)
+        await db.query(
+          "INSERT INTO marketing_exclusions(user_id,tenant_id) VALUES($1,$2)",
+          [actor.id, salonId],
+        );
+      await db.query(
+        "INSERT INTO consent_history(user_id,before_state,after_state,text_version) VALUES($1,$2,$3,$4)",
+        [
+          actor.id,
+          JSON.stringify({ marketingMessagesEnabled: actor.marketing_messages_enabled }),
+          JSON.stringify({ marketingMessagesEnabled: b.enabled, excludedSalonIds }),
+          b.textVersion,
+        ],
+      );
+      return result;
+    },
+  );
+  route(
+    app,
+    "GET",
     "/api/v1/me/salons",
     { description: "Салоны с записями и избранные" },
     async ({ db, actor }) => {
@@ -248,9 +436,9 @@ export function identityRoutes(app: FastifyInstance) {
           [actor.id, p.t],
         )) ?? {
           partnerAllowed: false,
-          serviceBotEnabled: false,
-          reminderBotEnabled: false,
-          offerBotEnabled: false,
+          serviceBotEnabled: true,
+          reminderBotEnabled: true,
+          offerBotEnabled: true,
           version: 0,
         }
       );

@@ -17,12 +17,23 @@ x-app: &app
     MAX_GLOBAL_RPS: ${MAX_GLOBAL_RPS:-25}
     MAX_DIALOG_RPS: ${MAX_DIALOG_RPS:-1}
     MEDIA_ROOT: /app/media
+    SALON_DISCOVERY_SEARCH_ENABLED: ${SALON_DISCOVERY_SEARCH_ENABLED:-true}
+    SALON_DISCOVERY_MAP_ENABLED: ${SALON_DISCOVERY_MAP_ENABLED:-true}
+    SALON_DISCOVERY_EDITOR_ENABLED: ${SALON_DISCOVERY_EDITOR_ENABLED:-true}
+    SALON_DISCOVERY_MAP_STYLE_LIGHT_URL: ${SALON_DISCOVERY_MAP_STYLE_LIGHT_URL:-https://tiles.openfreemap.org/styles/positron}
+    SALON_DISCOVERY_MAP_STYLE_DARK_URL: ${SALON_DISCOVERY_MAP_STYLE_DARK_URL:-https://tiles.openfreemap.org/styles/fiord}
+    SALON_DISCOVERY_GEOCODER_ENABLED: ${SALON_DISCOVERY_GEOCODER_ENABLED:-true}
+    SALON_DISCOVERY_GEOCODER_PROVIDER: ${SALON_DISCOVERY_GEOCODER_PROVIDER:-nominatim}
+    SALON_DISCOVERY_NOMINATIM_URL: ${SALON_DISCOVERY_NOMINATIM_URL:-https://nominatim.openstreetmap.org/search}
+    SALON_DISCOVERY_GEOAPIFY_API_KEY: ${SALON_DISCOVERY_GEOAPIFY_API_KEY:-}
+    PLATFORM_ADMIN_MAX_IDS: ${PLATFORM_ADMIN_MAX_IDS:-}
   volumes:
     - media:/app/media
   restart: unless-stopped
 services:
   postgres:
-    image: postgres:17.6-bookworm
+    image: postgis/postgis:17-3.5
+    platform: linux/amd64
     environment:
       POSTGRES_USER: salon
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-salon_local_only}
