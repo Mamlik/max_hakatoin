@@ -160,7 +160,7 @@ test("owner calendar changes month and filters masters", async ({ page }) => {
     expect(navigation!.y + navigation!.height).toBeGreaterThan(page.viewportSize()!.height - 3);
   }
   await page.getByRole("button", { name: "Предыдущий месяц" }).click();
-  expect(await page.locator(".month-days button").count()).toBeGreaterThanOrEqual(28);
+  await expect.poll(() => page.locator(".month-days button").count()).toBeGreaterThanOrEqual(28);
   await page.getByRole("button", { name: "Все мастера" }).click();
   await page.getByLabel("Поиск мастера").fill("соФ");
   await expect(page.locator(".staff-filter-menu button").filter({ hasText: "София" })).toBeVisible();
